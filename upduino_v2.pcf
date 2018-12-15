@@ -1,0 +1,14 @@
+set_io led_r	41
+set_io led_g	39
+set_io led_b	40
+
+# FTDI chip, which doesn't work
+set_io serial_txd 15
+set_io serial_rxd 17
+set_io serial_rts_n 14
+set_io serial_dtr_n 16
+
+# Debug pins
+set_io debug_gnd 2
+set_io debug0 46
+set_io debug1 47

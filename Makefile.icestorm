@@ -1,0 +1,54 @@
+#
+# Upduino v2
+#
+DEVICE ?= 5k
+FOOTPRNT ?= sg48
+PIN_SRC ?= upduino_v2.pcf
+ICEPATH ?= /usr/share/icestorm/
+
+
+%.flash: %.bin
+	iceprog $<
+
+%.bin: %.asc
+	icepack $< $@
+
+%.blif:
+	yosys \
+		-q \
+		-p "synth_ice40 -top top -blif $@" \
+		$^
+
+%.asc: $(PIN_SRC) %.blif
+	arachne-pnr \
+		-d $(DEVICE) \
+		-P $(FOOTPRNT) \
+		-o $@ \
+		-p \
+		$^
+
+%.timing: %.asc
+	icetime \
+		-d $(DEVICE) \
+		-p $(PIN_SRC) \
+		-P $(FOOTPRNT) \
+		-r $@ \
+		-t $<
+	tail -10 $@
+
+%.bin: %.asc
+	icepack $^ $@
+
+define make-test =
+$1: $1.vvp
+	vvp $$<
+endef
+
+test: $(TEST-y)
+$(foreach t,$(TEST-y),$(eval $(call make-test,$t)))
+%.vvp:
+	iverilog -o $@ -s $(basename $@) $^
+
+clean:
+	$(RM) *.blif *.asc *.bin
+
