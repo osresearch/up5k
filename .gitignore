@@ -3,3 +3,4 @@
 *.blif
 *.asc
 *.timing
+pll_*.v
