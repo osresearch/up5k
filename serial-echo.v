@@ -1,16 +1,13 @@
 /** \file
  * Test the serial input/output to the FTDI chip.
  *
+ * This configures the serial port at 3 Mb/s and uses a small block RAM
+ * fifo to buffer incoming data before echoing the data.
+ *
  * The schematic disagrees with the PCF, but the PCF works...
  *
  * The SPI flash chip select *MUST* be pulled high to disable the
  * flash chip, otherwise they will both be driving the bus.
- *
- * This may interfere with programming; `iceprog -e 128` should erase enough
- * to make it compliant for re-programming
- *
- * The USB port will have to be cycled to get the FTDI to renumerate as
- * /dev/ttyUSB0.  Not sure what is going on with iceprog.
  */
 
 module top(
@@ -32,15 +29,14 @@ module top(
 		.CLKHF(clk_48)
 	);
 
+	// pulse the green LED to know that we're alive
 	reg [31:0] counter;
-
 	always @(posedge clk_48)
-		if (reset)
-			counter <= 0;
-		else
-			counter <= counter + 1;
+		counter <= counter + 1;
+	wire pwm_g;
+	pwm pwm_g_driver(clk_48, 1, pwm_g);
+	assign led_g = !(counter[25:23] == 0 && pwm_g);
 
-	assign led_g = 1;
 	assign led_b = serial_rxd; // idles high
 
 	// generate a 3 MHz/12 MHz serial clock from the 48 MHz clock
@@ -90,17 +86,6 @@ module top(
 		.read_strobe(fifo_read_strobe)
 	);
 
-/*
-	always @(posedge clk_48) begin
-		// when new data arrives, write it to the tx buffer
-		if (uart_rxd_strobe) begin
-			buffer[write_ptr] <= uart_rxd;
-			//buffer_write <= uart_rxd;
-			write_ptr <= write_ptr + 1;
-		end
-
-	end
-*/
 	always @(posedge clk_48) begin
 		uart_txd_strobe <= 0;
 		fifo_read_strobe <= 0;
@@ -109,6 +94,7 @@ module top(
 		if (fifo_available && uart_txd_ready && !uart_txd_strobe) begin
 			fifo_read_strobe <= 1;
 			uart_txd_strobe <= 1;
+			led_r <= 0;
 		end
 	end
 endmodule
