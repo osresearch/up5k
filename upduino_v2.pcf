@@ -4,9 +4,10 @@ set_io led_r	41
 set_io led_g	39
 set_io led_b	40
 
-# FTDI chip, which doesn't work
+# FTDI chip, which sort of works
 set_io serial_txd 14 # FPGA transmit to USB
 set_io serial_rxd 15 # FPGA receive from USB
+set_io spi_cs 16 # Drive high to ensure that the SPI flash is disabled
 # set_io serial_rts_n 14  # no?
 # set_io serial_dtr_n 16  # no?
 
