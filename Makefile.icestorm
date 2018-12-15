@@ -11,6 +11,7 @@ ICEPATH ?= /usr/share/icestorm/
 %.flash: %.bin
 	iceprog -e 128 # Force a reset
 	iceprog $<
+	echo > /sys/bus/usb/drivers/ftdi_sio/bind 1-1:1.0 # re-attach serial
 
 %.bin: %.asc
 	icepack $< $@
