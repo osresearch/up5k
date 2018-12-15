@@ -47,17 +47,3 @@ module top(
 	);
 
 endmodule
-
-module pwm(
-	input clk,
-	input [7:0] bright,
-	output out
-);
-	reg [7:0] counter;
-	always @(posedge clk)
-		counter <= counter + 1;
-
-	always @(*)
-		out <= counter > bright;
-
-endmodule
