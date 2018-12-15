@@ -29,9 +29,6 @@ ICEPATH ?= /usr/share/icestorm/
 
 %.timing: %.asc
 	icetime \
-		-d $(DEVICE) \
-		-p $(PIN_SRC) \
-		-P $(FOOTPRNT) \
 		-r $@ \
 		-t $<
 	tail -10 $@
