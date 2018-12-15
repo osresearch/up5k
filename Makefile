@@ -2,6 +2,6 @@
 all: pulse.bin
 
 pulse.blif: pulse.v
-serial.blif: serial.v uart.v pll_32.v
+serial.blif: serial.v uart.v util.v
 
 include Makefile.icestorm

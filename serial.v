@@ -24,18 +24,12 @@ module top(
 );
 	assign spi_cs = 1; // it is necessary to turn off the SPI flash chip
 
-	wire clk_48, clk_96, locked;
-	wire reset = !locked;
+	wire clk_48;
+	wire reset = 0;
 	SB_HFOSC u_hfosc (
 		.CLKHFPU(1'b1),
 		.CLKHFEN(1'b1),
 		.CLKHF(clk_48)
-	);
-
-	pll_32 pll(
-		.clock_in(clk_48),
-		.clock_out(clk_96),
-		.locked(locked)
 	);
 
 	reg [31:0] counter;
@@ -50,21 +44,8 @@ module top(
 	assign led_b = serial_rxd; // idles high
 
 	// generate a 1 MHz serial clock from the 48 MHz clock
-	reg clk_3;
-	reg [5:0] clk_3_counter;
-	always @(posedge clk_48)
-	begin
-		clk_3 <= 0;
-		if (reset)
-			clk_3_counter <= 0;
-		else
-		if (clk_3_counter == 48)
-		begin
-			clk_3 <= 1;
-			clk_3_counter <= 0;
-		end else
-			clk_3_counter <= clk_3_counter + 1;
-	end
+	wire clk_1;
+	divide_by_n #(.N(48)) div(clk_48, reset, clk_1);
 
 	reg [7:0] uart_txd;
 	reg uart_txd_strobe;
@@ -73,7 +54,7 @@ module top(
 	uart_tx txd(
 		.mclk(clk_48),
 		.reset(reset),
-		.baud_x1(clk_3),
+		.baud_x1(clk_1),
 		.serial(serial_txd),
 		.ready(uart_txd_ready),
 		.data(uart_txd),
@@ -91,7 +72,7 @@ module top(
 			// nothing
 			byte_counter <= 0;
 		end else
-		if (uart_txd_ready && !uart_txd_strobe && counter[15:0] == 0) begin
+		if (uart_txd_ready && !uart_txd_strobe && counter[14:0] == 0) begin
 			// ready to send a new byte
 			uart_txd_strobe <= 1;
 
@@ -101,11 +82,9 @@ module top(
 			if (byte_counter == 1)
 				uart_txd <= "\n";
 			else
-				uart_txd <= 8'h41 + byte_counter - 2;
+				uart_txd <= "A" + byte_counter - 2;
 			byte_counter <= byte_counter + 1;
 			led_r <= 0;
-		end else begin
 		end
 	end
 endmodule
-
