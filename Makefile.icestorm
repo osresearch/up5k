@@ -6,8 +6,10 @@ FOOTPRNT ?= sg48
 PIN_SRC ?= upduino_v2.pcf
 ICEPATH ?= /usr/share/icestorm/
 
+.SECONDARY:
 
 %.flash: %.bin
+	iceprog -e 128 # Force a reset
 	iceprog $<
 
 %.bin: %.asc
@@ -35,6 +37,16 @@ ICEPATH ?= /usr/share/icestorm/
 
 %.bin: %.asc
 	icepack $^ $@
+
+# Generate a desired MHz pll
+pll_%.v:
+	icepll \
+		-i 48 \
+		-o $(subst pll_,,$(basename $@)) \
+		-m \
+		-n $(basename $@) \
+		-f $@
+
 
 define make-test =
 $1: $1.vvp
