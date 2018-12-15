@@ -43,10 +43,11 @@ module top(
 	assign led_g = 1;
 	assign led_b = serial_rxd; // idles high
 
-	// generate a 1 MHz serial clock from the 48 MHz clock
+	// generate a 3 MHz/12 MHz serial clock from the 48 MHz clock
+	// this is the 3 Mb/s maximum supported by the FTDI chip
 	wire clk_1, clk_4;
-	divide_by_n #(.N(48)) div1(clk_48, reset, clk_1);
-	divide_by_n #(.N(12)) div4(clk_48, reset, clk_4);
+	divide_by_n #(.N(16)) div1(clk_48, reset, clk_1);
+	divide_by_n #(.N( 4)) div4(clk_48, reset, clk_4);
 
 	reg [7:0] uart_txd;
 	reg uart_txd_strobe;
