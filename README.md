@@ -33,7 +33,7 @@ and seem to work (and the ones in the pinout do not).
 UltraPlus 5K overview
 ===
 
-![Block diagram](images/ice40-up5k.png)
+![Block diagram](images/up5k.svg)
 
 Overview: http://www.latticesemi.com/Products/FPGAandCPLD/iCE40UltraPlus
 Datasheet: http://www.latticesemi.com/-/media/LatticeSemi/Documents/DataSheets/iCE/iCE40-UltraPlus-Family-Data-Sheet.ashx
