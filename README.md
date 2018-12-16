@@ -1,4 +1,4 @@
-![Upduino v2 RGB LEd](led.jpg)
+![Upduino v2 RGB LEd](images/led.jpg)
 
 Upduino v2 examples with icestorm
 ====
@@ -24,9 +24,22 @@ Schematics and pinout
 
 Schematics for the upduino: https://github.com/gtjennings1/UPDuino_v2_0
 
-![Upduino v2 pinout by Matt Mets](pinout.jpg)
+![Upduino v2 pinout by Matt Mets](images/pinout.jpg)
 
 Note that the `upduino_v2.pcf` file disagrees with the serial port in
 the pinout and schematic.  The pins were determined through experimentation
 and seem to work (and the ones in the pinout do not).
 
+UltraPlus 5K overview
+===
+
+![Block diagram](images/ice40-up5k.png)
+
+Overview: http://www.latticesemi.com/Products/FPGAandCPLD/iCE40UltraPlus
+Datasheet: http://www.latticesemi.com/-/media/LatticeSemi/Documents/DataSheets/iCE/iCE40-UltraPlus-Family-Data-Sheet.ashx
+
+![Programable Logic Block](images/ice40-plb.png)
+
+![Block RAM](images/ice40-ram4k.png)
+
+![Single Port RAM](images/ice40-spram.png)
