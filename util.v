@@ -85,15 +85,17 @@ endmodule
 
 module pwm(
 	input clk,
-	input [7:0] bright,
+	input [BITS-1:0] bright,
 	output out
 );
-	reg [7:0] counter;
-	always @(posedge clk)
-		counter <= counter + 1;
+	parameter BITS = 8;
 
-	always @(*)
+	reg [BITS-1:0] counter;
+	always @(posedge clk)
+	begin
+		counter <= counter + 1;
 		out <= counter < bright;
+	end
 
 endmodule
 
