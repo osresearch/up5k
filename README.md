@@ -36,10 +36,5 @@ UltraPlus 5K overview
 ![Block diagram](images/up5k.svg)
 
 Overview: http://www.latticesemi.com/Products/FPGAandCPLD/iCE40UltraPlus
+
 Datasheet: http://www.latticesemi.com/-/media/LatticeSemi/Documents/DataSheets/iCE/iCE40-UltraPlus-Family-Data-Sheet.ashx
-
-![Programable Logic Block](images/ice40-plb.png)
-
-![Block RAM](images/ice40-ram4k.png)
-
-![Single Port RAM](images/ice40-spram.png)
