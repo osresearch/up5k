@@ -4,26 +4,26 @@
 DEVICE ?= 5k
 FOOTPRNT ?= sg48
 PIN_SRC ?= upduino_v2.pcf
-ICEPATH ?= /usr/share/icestorm/
+ICEPATH ?=
 
 .SECONDARY:
 
 %.flash: %.bin
-	iceprog -e 128 # Force a reset
-	iceprog $<
+	$(ICEPATH)iceprog -e 128 # Force a reset
+	$(ICEPATH)iceprog $<
 	echo > /sys/bus/usb/drivers/ftdi_sio/bind 1-1:1.0 # re-attach serial
 
 %.bin: %.asc
-	icepack $< $@
+	$(ICEPATH)icepack $< $@
 
 %.blif:
-	yosys \
+	$(ICEPATH)yosys \
 		-q \
 		-p "synth_ice40 -top top -blif $@" \
 		$^
 
 %.asc: $(PIN_SRC) %.blif
-	arachne-pnr \
+	$(ICEPATH)arachne-pnr \
 		-d $(DEVICE) \
 		-P $(FOOTPRNT) \
 		-o $@ \
@@ -31,17 +31,17 @@ ICEPATH ?= /usr/share/icestorm/
 		$^
 
 %.timing: %.asc
-	icetime \
+	$(ICEPATH)icetime \
 		-r $@ \
 		-t $<
 	tail -10 $@
 
 %.bin: %.asc
-	icepack $^ $@
+	$(ICEPATH)icepack $^ $@
 
 # Generate a desired MHz pll
 pll_%.v:
-	icepll \
+	$(ICEPATH)icepll \
 		-i 48 \
 		-o $(subst pll_,,$(basename $@)) \
 		-m \
