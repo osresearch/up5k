@@ -10,9 +10,9 @@
 
 module spram_32k(
 	input clk,
-	input reset,
+	input reset = 0,
+	input cs = 1,
 	input wren,
-	input cs,
 	input [14:0] addr,
 	input [7:0] write_data,
 	output [7:0] read_data
