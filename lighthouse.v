@@ -184,6 +184,7 @@ module lighthouse_sweep(
 	reg [WIDTH-1:0] last_rise;
 	reg [WIDTH-1:0] last_fall;
 	reg got_sweep;
+	reg got_sync1;
 
 	// time low
 	wire [WIDTH-1:0] len = counter - last_fall;
@@ -208,6 +209,7 @@ module lighthouse_sweep(
 			last_fall <= 0;
 			last_rise <= 0;
 			got_sweep <= 0;
+			got_sync1 <= 0;
 		end else
 		if (fall_strobe)
 		begin
@@ -217,25 +219,32 @@ module lighthouse_sweep(
 		if (rise_strobe)
 		begin
 			if (len < 15 * CLOCKS_PER_MICROSECOND) begin
-				// this was a sweep!
-				got_sweep <= 1;
-
 				// signal that we have something
-				sweep_strobe <= 1;
+				// if we've seen the sync pulses
+				if (got_sync1)
+					sweep_strobe <= 1;
 
 				// time is from the last rising edge to
 				// the midpoint of the sweep pulse
-				//sweep <= counter - len/2 - last_rise;
-				sweep <= duty[23:4];
+				sweep <= counter - len/2 - last_rise;
+				//sweep <= duty;
+
+				// indicate that we have a sweep
+				got_sweep <= 1;
+				got_sync1 <= 0;
 			end else
 			if (got_sweep) begin
 				// first non-sweep pulse after a sweep
 				sync0 <= len;
 				got_sweep <= 0;
+				got_sync1 <= 0;
 			end else begin
 				// second non-sweep pulse
 				sync1 <= len;
+				got_sync1 <= 1;
 			end
+
+			last_rise <= counter;
 		end
 	end
 
