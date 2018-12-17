@@ -73,13 +73,13 @@ module top(
 	);
 
 	// output buffer
-	reg [31:0] timer_fifo_write;
+	reg [71:0] timer_fifo_write;
 	reg timer_fifo_write_strobe;
 	wire timer_fifo_available;
-	wire [31:0] timer_fifo_read;
+	wire [71:0] timer_fifo_read;
 	reg timer_fifo_read_strobe;
 
-	fifo #(.WIDTH(32),.NUM(256)) timer_fifo(
+	fifo #(.WIDTH(8*3*3),.NUM(256)) timer_fifo(
 		.clk(clk_48),
 		.reset(reset),
 		.data_available(timer_fifo_available),
@@ -89,38 +89,38 @@ module top(
 		.read_strobe(timer_fifo_read_strobe)
 	);
 
-	// timer delta
-	wire rise_strobe_a;
-	wire fall_strobe_a;
-	wire [23:0] length_a;
+	wire [23:0] sync0_a;
+	wire [23:0] sync1_a;
+	wire [23:0] sweep_a;
+	wire sweep_strobe_a;
 
-	edge_capture edge_a(
+	lighthouse_sweep sensor_a(
 		.clk(clk_48),
 		.reset(reset),
 		.raw_pin(lighthouse_a),
-		.rise_strobe(rise_strobe_a),
-		.fall_strobe(fall_strobe_a),
-		.pulse_length(length_a)
+		.sync0(sync0_a),
+		.sync1(sync1_a),
+		.sweep(sweep_a),
+		.sweep_strobe(sweep_strobe_a)
 	);
 
 	always @(posedge clk_48)
 	begin
 		timer_fifo_write_strobe <= 0;
 
-		if (fall_strobe_a)
+		if (sweep_strobe_a)
 		begin
-			timer_fifo_write <= { 8'h00, length_a };
-			timer_fifo_write_strobe <= 1;
-		end else
-		if (rise_strobe_a)
-		begin
-			timer_fifo_write <= { 8'h80, length_a };
+			timer_fifo_write <= {
+				sync0_a,
+				sync1_a,
+				sweep_a
+			};
 			timer_fifo_write_strobe <= 1;
 		end
 	end
 
-	reg [31:0] out = 32'hDECAFBAD;
-	reg [4:0] out_bytes = 10;
+	reg [71:0] out;
+	reg [5:0] out_bytes;
 
 	always @(posedge clk_48)
 	begin
@@ -137,19 +137,105 @@ module top(
 			else
 			if (out_bytes == 2)
 				uart_txd <= "\n";
-			else if (out_bytes == 10)
-				uart_txd <= out[31] ? "+" : "-";
 			else begin
-				uart_txd <= hexdigit(out[31:28]);
+				uart_txd <= hexdigit(out[71:68]);
 			end
 
-			out <= { out[27:0], 4'b0 };
+			out <= { out[68:0], 4'b0 };
 		end else
 		if (timer_fifo_available)
 		begin
 			out <= timer_fifo_read;
 			timer_fifo_read_strobe <= 1;
-			out_bytes <= 10;
+			out_bytes <= 20;
+		end
+	end
+
+endmodule
+
+
+/*
+ * Measure the raw sweep times for the sensor.
+ * This also reports the lengths of the two sync pulses so that
+ * the correct axis and OOTX can be assigned.
+
+                 Sync      Data      Angle
+                <----->   <-----><------------>
+_____   ________       ___       _____________   ___________
+     |_|        |_____|   |_____|             |_|
+    Sweep        Sync0     Sync1             Sweep
+
+ */
+module lighthouse_sweep(
+	input clk,
+	input reset,
+	input raw_pin,
+	output reg [WIDTH-1:0] sync0,
+	output reg [WIDTH-1:0] sync1,
+	output reg [WIDTH-1:0] sweep,
+	output sweep_strobe
+);
+	parameter WIDTH = 24;
+	parameter CLOCKS_PER_MICROSECOND = 48;
+
+	wire rise_strobe;
+	wire fall_strobe;
+	reg [WIDTH-1:0] counter;
+	reg [WIDTH-1:0] last_rise;
+	reg [WIDTH-1:0] last_fall;
+	reg got_sweep;
+
+	// time low
+	wire [WIDTH-1:0] len = counter - last_fall;
+	wire [WIDTH-1:0] duty = counter - last_rise;
+
+	edge_capture edge(
+		.clk(clk),
+		.reset(reset),
+		.raw_pin(raw_pin),
+		.rise_strobe(rise_strobe),
+		.fall_strobe(fall_strobe)
+	);
+
+	always @(posedge clk)
+	begin
+		sweep_strobe <= 0;
+		counter <= counter + 1;
+
+		if (reset)
+		begin
+			counter <= 0;
+			last_fall <= 0;
+			last_rise <= 0;
+			got_sweep <= 0;
+		end else
+		if (fall_strobe)
+		begin
+			// record the time of the falling strobe
+			last_fall <= counter;
+		end else
+		if (rise_strobe)
+		begin
+			if (len < 15 * CLOCKS_PER_MICROSECOND) begin
+				// this was a sweep!
+				got_sweep <= 1;
+
+				// signal that we have something
+				sweep_strobe <= 1;
+
+				// time is from the last rising edge to
+				// the midpoint of the sweep pulse
+				//sweep <= counter - len/2 - last_rise;
+				sweep <= duty[23:4];
+			end else
+			if (got_sweep) begin
+				// first non-sweep pulse after a sweep
+				sync0 <= len;
+				got_sweep <= 0;
+			end else begin
+				// second non-sweep pulse
+				sync1 <= len;
+			end
 		end
 	end
 
@@ -160,13 +246,9 @@ module edge_capture(
 	input clk,
 	input reset,
 	input raw_pin,
-	output [WIDTH-1:0] pulse_length,
 	output rise_strobe,
 	output fall_strobe
 );
-	parameter WIDTH = 24;
-
-	reg [WIDTH-1:0] counter;
 	reg pin0;
 	reg pin1;
 	reg pin2;
@@ -182,17 +264,13 @@ module edge_capture(
 		pin1 <= pin0;
 		pin2 <= pin1;
 
-		if (reset)
-			counter <= 0;
-		else
-		if (pin2 != pin1) begin
-			rise_strobe <=  pin2;
-			fall_strobe <= !pin2;
-			pulse_length <= counter;
-			counter <= 0;
+		if (reset) begin
+			// nothing to do
 		end else
-		if (counter != ~0)
-			counter <= counter + 1;
+		if (pin2 != pin1) begin
+			rise_strobe <= !pin2;
+			fall_strobe <=  pin2;
+		end
 	end
 
 endmodule
