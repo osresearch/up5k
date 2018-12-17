@@ -1,8 +1,8 @@
 /** \file
  * Test the serial input/output to the FTDI chip.
  *
- * This configures the serial port at 3 Mb/s and uses a small block RAM
- * fifo to buffer incoming data before echoing the data.
+ * This configures the serial port at 3 Mb/s and directly routes
+ * the incoming data to the outbound serial port.
  *
  * The schematic disagrees with the PCF, but the PCF works...
  *
@@ -38,16 +38,14 @@ module top(
 	assign led_g = !(counter[25:23] == 0 && pwm_g);
 
 	assign led_b = serial_rxd; // idles high
+	assign led_r = serial_txd; // idles high
+	assign debug0 = serial_txd;
 
 	// generate a 3 MHz/12 MHz serial clock from the 48 MHz clock
 	// this is the 3 Mb/s maximum supported by the FTDI chip
 	wire clk_1, clk_4;
 	divide_by_n #(.N(16)) div1(clk_48, reset, clk_1);
 	divide_by_n #(.N( 4)) div4(clk_48, reset, clk_4);
-
-	reg [7:0] uart_txd;
-	reg uart_txd_strobe;
-	wire uart_txd_ready;
 
 	wire [7:0] uart_rxd;
 	wire uart_rxd_strobe;
@@ -57,9 +55,8 @@ module top(
 		.reset(reset),
 		.baud_x1(clk_1),
 		.serial(serial_txd),
-		.ready(uart_txd_ready),
-		.data(uart_txd),
-		.data_strobe(uart_txd_strobe)
+		.data(uart_rxd),
+		.data_strobe(uart_rxd_strobe)
 	);
 
 	uart_rx rxd(
@@ -71,30 +68,4 @@ module top(
 		.data_strobe(uart_rxd_strobe)
 	);
 
-	assign debug0 = serial_txd;
-
-	reg fifo_read_strobe;
-	wire fifo_available;
-
-	fifo buffer(
-		.clk(clk_48),
-		.reset(reset),
-		.write_data(uart_rxd),
-		.write_strobe(uart_rxd_strobe),
-		.data_available(fifo_available),
-		.read_data(uart_txd),
-		.read_strobe(fifo_read_strobe)
-	);
-
-	always @(posedge clk_48) begin
-		uart_txd_strobe <= 0;
-		fifo_read_strobe <= 0;
-		led_r <= 1;
-
-		if (fifo_available && uart_txd_ready && !uart_txd_strobe) begin
-			fifo_read_strobe <= 1;
-			uart_txd_strobe <= 1;
-			led_r <= 0;
-		end
-	end
 endmodule
