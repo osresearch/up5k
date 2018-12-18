@@ -248,13 +248,13 @@ module lighthouse_sensor(
 	output [1:0] ootx,
 	output [3:0] strobe
 );
-	parameter WIDTH = 24;
+	parameter WIDTH = 20;
 	parameter MHZ = 48;
 
 	wire sweep_strobe;
 	wire [WIDTH-1:0] sync0;
 	wire [WIDTH-1:0] sync1;
-	wire [24-1:0] sweep;
+	wire [20-1:0] sweep;
 
 	reg [19:0] angles[0:3];
 	assign angle0 = angles[0];
@@ -327,13 +327,14 @@ endmodule
 // This disagrees with https://github.com/nairol/LighthouseRedox/blob/master/docs/Light%20Emissions.md
 // but matches what I've seen on my lighthouses.
 module lighthouse_sync_decode(
-	input [23:0] sync,
+	input [WIDTH-1:0] sync,
 	output skip,
 	output data,
 	output axis,
 	output valid
 );
 	parameter MHZ = 48; // we should do something with this
+	parameter WIDTH = 20;
 
 	wire [8:0] sync_short = sync[8+9:9];
 	assign valid = (6 <= sync_short) && (sync_short <= 13);
