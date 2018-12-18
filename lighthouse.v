@@ -76,90 +76,84 @@ module top(
 
 	// output buffer
 	parameter FIFO_WIDTH = 28;
-	reg [FIFO_WIDTH-1:0] timer_fifo_write;
-	reg timer_fifo_write_strobe;
-	wire timer_fifo_available;
-	wire [FIFO_WIDTH-1:0] timer_fifo_read;
-	reg timer_fifo_read_strobe;
+	reg [FIFO_WIDTH-1:0] fifo_write;
+	reg fifo_write_strobe;
+	wire fifo_available;
+	wire [FIFO_WIDTH-1:0] fifo_read;
+	reg fifo_read_strobe;
 
 	fifo #(.WIDTH(FIFO_WIDTH),.NUM(16)) timer_fifo(
 		.clk(clk_48),
 		.reset(reset),
-		.data_available(timer_fifo_available),
-		.write_data(timer_fifo_write),
-		.write_strobe(timer_fifo_write_strobe),
-		.read_data(timer_fifo_read),
-		.read_strobe(timer_fifo_read_strobe)
+		.data_available(fifo_available),
+		.write_data(fifo_write),
+		.write_strobe(fifo_write_strobe),
+		.read_data(fifo_read),
+		.read_strobe(fifo_read_strobe)
 	);
 
-	wire [19:0] angle_a0;
-	wire [19:0] angle_a1;
-	wire [19:0] angle_a2;
-	wire [19:0] angle_a3;
-	wire [3:0] sweep_strobe_a;
+	wire [19:0] angle_a [0:3];
+	wire [3:0] strobe_a;
 
 	lighthouse_sensor sensor_a(
 		.clk(clk_48),
 		.reset(reset),
 		.raw_pin(lighthouse_a),
-		.angle0(angle_a0),
-		.angle1(angle_a1),
-		.angle2(angle_a2),
-		.angle3(angle_a3),
-		.strobe(sweep_strobe_a)
+		.angle0(angle_a[0]),
+		.angle1(angle_a[1]),
+		.angle2(angle_a[2]),
+		.angle3(angle_a[3]),
+		.strobe(strobe_a)
 	);
 
-	wire [19:0] angle_b0;
-	wire [19:0] angle_b1;
-	wire [19:0] angle_b2;
-	wire [19:0] angle_b3;
-	wire [3:0] sweep_strobe_b;
+	wire [19:0] angle_b [0:3];
+	wire [3:0] strobe_b;
 
 	lighthouse_sensor sensor_b(
 		.clk(clk_48),
 		.reset(reset),
 		.raw_pin(lighthouse_b),
-		.angle0(angle_b0),
-		.angle1(angle_b1),
-		.angle2(angle_b2),
-		.angle3(angle_b3),
-		.strobe(sweep_strobe_b)
+		.angle0(angle_b[0]),
+		.angle1(angle_b[1]),
+		.angle2(angle_b[2]),
+		.angle3(angle_b[3]),
+		.strobe(strobe_b)
 	);
 
 	always @(posedge clk_48)
 	begin
-		timer_fifo_write_strobe <= 0;
+		fifo_write_strobe <= 0;
 
-		if (sweep_strobe_b != 0)
+		if (strobe_b != 0)
 		begin
-			timer_fifo_write_strobe <= 1;
-			if (sweep_strobe_b[0])
-				timer_fifo_write <= { 8'hB0, angle_b0[19:0] };
+			fifo_write_strobe <= 1;
+			if (strobe_b[0])
+				fifo_write <= { 8'hB0, angle_b[0][19:0] };
 			else
-			if (sweep_strobe_b[1])
-				timer_fifo_write <= { 8'hB1, angle_b1[19:0] };
+			if (strobe_b[1])
+				fifo_write <= { 8'hB1, angle_b[1][19:0] };
 			else
-			if (sweep_strobe_b[2])
-				timer_fifo_write <= { 8'hB2, angle_b2[19:0] };
+			if (strobe_b[2])
+				fifo_write <= { 8'hB2, angle_b[2][19:0] };
 			else
-			if (sweep_strobe_b[3])
-				timer_fifo_write <= { 8'hB3, angle_b3[19:0] };
+			if (strobe_b[3])
+				fifo_write <= { 8'hB3, angle_b[3][19:0] };
 		end
 		else
-		if (sweep_strobe_a != 0)
+		if (strobe_a != 0)
 		begin
-			timer_fifo_write_strobe <= 1;
-			if (sweep_strobe_a[0])
-				timer_fifo_write <= { 8'hA0, angle_a0[19:0] };
+			fifo_write_strobe <= 1;
+			if (strobe_a[0])
+				fifo_write <= { 8'hA0, angle_a[0][19:0] };
 			else
-			if (sweep_strobe_a[1])
-				timer_fifo_write <= { 8'hA1, angle_a1[19:0] };
+			if (strobe_a[1])
+				fifo_write <= { 8'hA1, angle_a[1][19:0] };
 			else
-			if (sweep_strobe_a[2])
-				timer_fifo_write <= { 8'hA2, angle_a2[19:0] };
+			if (strobe_a[2])
+				fifo_write <= { 8'hA2, angle_a[2][19:0] };
 			else
-			if (sweep_strobe_a[3])
-				timer_fifo_write <= { 8'hA3, angle_a3[19:0] };
+			if (strobe_a[3])
+				fifo_write <= { 8'hA3, angle_a[3][19:0] };
 		end
 	end
 
@@ -169,7 +163,7 @@ module top(
 	always @(posedge clk_48)
 	begin
 		uart_txd_strobe <= 0;
-		timer_fifo_read_strobe <= 0;
+		fifo_read_strobe <= 0;
 
 		// convert timer deltas to hex digits
 		if (out_bytes != 0)
@@ -190,10 +184,10 @@ module top(
 			end
 
 		end else
-		if (timer_fifo_available)
+		if (fifo_available)
 		begin
-			out <= timer_fifo_read;
-			timer_fifo_read_strobe <= 1;
+			out <= fifo_read;
+			fifo_read_strobe <= 1;
 			out_bytes <= 2 + 1 + FIFO_WIDTH/4;
 		end
 	end
