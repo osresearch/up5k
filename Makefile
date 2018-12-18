@@ -1,5 +1,5 @@
 
-all: pulse.bin
+all: pulse.bin blink.bin serial.bin serial-echo.bin spram-demo.bin lighthouse.bin
 
 blink.blif: blink.v
 pulse.blif: pulse.v util.v
