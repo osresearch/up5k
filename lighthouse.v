@@ -37,7 +37,7 @@ module lighthouse_sensor(
 	output [ANGLE_BITS-1:0] angle,
 	output lighthouse,
 	output axis,
-	output [1:0] ootx,
+	output data,
 );
 	parameter WIDTH = 20;
 	parameter MHZ = 48;
@@ -48,51 +48,54 @@ module lighthouse_sensor(
 	wire [10:0] sync1;
 	wire [20-1:0] sweep;
 
-	wire skip0, axis0, valid0;
-	wire skip1, axis1, valid1;
+	wire [1:0] skip;
+	wire [1:0] valid;
+	wire [1:0] axis_raw;
+	wire [1:0] data_raw;
 
 	lighthouse_sweep #(
 		.WIDTH(WIDTH),
-		.CLOCKS_PER_MICROSECOND(MHZ)
+		.MHZ(MHZ)
 	) lh_sweep(
 		.clk(clk),
 		.reset(reset),
 		.raw_pin(raw_pin),
-		.sync0(sync0),
-		.sync1(sync1),
+		.skip(skip),
+		.valid(valid),
+		.axis(axis_raw),
+		.data(data_raw),
 		.sweep(sweep),
 		.sweep_strobe(sweep_strobe)
 	);
-
-	lighthouse_sync_decode #(.MHZ(MHZ)) sync0_decode(
-		sync0, skip0, ootx[0], axis0, valid0);
-
-	lighthouse_sync_decode #(.MHZ(MHZ)) sync1_decode(
-		sync1, skip1, ootx[1], axis1, valid1);
 
 
 	always @(posedge clk)
 	begin
 		strobe <= 0;
 
-		if (reset || !valid0 || !valid1) begin
+		if (reset || !valid[0] || !valid[1]) begin
 			// nothing; ignore any pulses
 		end else
 		if (sweep_strobe) begin
-			if (skip0 == skip1)
-				strobe <= 0; // should never happen.
-			else
+			// ensure that only one was flagged as skipped
+			if (skip[0] != skip[1])
 				strobe <= 1;
 
-			angle <= sweep;
+			// convert the 20-bit sweep timer into the desired
+			// precision for the output angle
+			angle <= sweep[19:20 - ANGLE_BITS];
 
-			lighthouse <= skip0;
-
-			axis <=
-				!skip0 &&  axis0 ? 0 :
-				!skip0 && !axis0 ? 1 :
-				!skip1 &&  axis0 ? 2 :
-				!skip1 && !axis0 ? 3 : 0 ;
+			// determine which lighthouse sent the sweep
+			// (the one that was not skipped)
+			if (!skip[0]) begin
+				lighthouse <= 0;
+				axis <= axis_raw[0];
+				data <= data_raw[0];
+			end else begin
+				lighthouse <= 1;
+				axis <= axis_raw[1];
+				data <= data_raw[1];
+			end
 		end
 	end
 
@@ -121,13 +124,15 @@ module lighthouse_sweep(
 	input clk,
 	input reset,
 	input raw_pin,
-	output reg [10:0] sync0,
-	output reg [10:0] sync1,
+	output reg [1:0] axis,
+	output reg [1:0] skip,
+	output reg [1:0] data,
+	output reg [1:0] valid,
 	output reg [WIDTH-1:0] sweep,
 	output sweep_strobe
 );
 	parameter WIDTH = 24;
-	parameter CLOCKS_PER_MICROSECOND = 48;
+	parameter MHZ = 48;
 
 	wire rise_strobe;
 	wire fall_strobe;
@@ -140,6 +145,14 @@ module lighthouse_sweep(
 	// time low
 	wire [WIDTH-1:0] len = counter - last_fall;
 	wire [WIDTH-1:0] duty = counter - last_rise;
+
+	// decode the sync pulse, ignoring the bottom 9 bits
+	wire skip_raw;
+	wire data_raw;
+	wire axis_raw;
+	wire valid_raw;
+	lighthouse_sync_decode #(.MHZ(MHZ)) sync_decode(
+		len[WIDTH-1:9], skip_raw, data_raw, axis_raw, valid_raw);
 
 	edge_capture edge(
 		.clk(clk),
@@ -169,7 +182,7 @@ module lighthouse_sweep(
 		end else
 		if (rise_strobe)
 		begin
-			if (len < 15 * CLOCKS_PER_MICROSECOND) begin
+			if (len < 15 * MHZ) begin
 				// signal that we have something
 				// if we've seen the sync pulses
 				if (got_sync1)
@@ -185,12 +198,18 @@ module lighthouse_sweep(
 			end else
 			if (got_sweep) begin
 				// first non-sweep pulse after a sweep
-				sync0 <= len[10+9:9];
+				axis[0] <= axis_raw;
+				data[0] <= data_raw;
+				skip[0] <= skip_raw;
+				valid[0] <= valid_raw;
 				got_sweep <= 0;
 				got_sync1 <= 0;
 			end else begin
 				// second non-sweep pulse
-				sync1 <= len[10+9:9];
+				axis[1] <= axis_raw;
+				data[1] <= data_raw;
+				skip[1] <= skip_raw;
+				valid[1] <= valid_raw;
 				got_sync1 <= 1;
 			end
 

@@ -124,11 +124,12 @@ module top(
 		.read_strobe(fifo_read_strobe)
 	);
 
-	parameter ANGLE_BITS = 20;
+	parameter ANGLE_BITS = 16;
 	wire [ANGLE_BITS-1:0] angle [0:NUM_SENSORS-1];
 	wire [NUM_SENSORS-1:0] axis;
 	wire [NUM_SENSORS-1:0] lighthouse;
 	wire [NUM_SENSORS-1:0] strobe;
+	wire [NUM_SENSORS-1:0] data;
 
 	genvar x;
 	for(x = 0 ; x < NUM_SENSORS ; x = x+1)
@@ -140,6 +141,7 @@ module top(
 			.strobe(strobe[x]),
 			.angle(angle[x]),
 			.axis(axis[x]),
+			.data(data[x]),
 			.lighthouse(lighthouse[x])
 		);
 	end
@@ -172,6 +174,8 @@ module top(
 				2'b0,
 				lighthouse[sensor],
 				axis[sensor],
+				3'b0,
+				data[sensor],
 				angle[sensor]
 			};
 		end
@@ -197,7 +201,7 @@ module top(
 			if (out_bytes == 2)
 				uart_txd <= "\n";
 			else
-			if (out_bytes == 3+5)
+			if (out_bytes == 3+4)
 				uart_txd <= " ";
 			else begin
 				uart_txd <= hexdigit(out[FIFO_WIDTH-1:FIFO_WIDTH-4]);
