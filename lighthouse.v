@@ -12,6 +12,7 @@ module top(
 	input serial_rxd,
 	output spi_cs,
 	output debug0,
+	input gpio_2,
 	input gpio_18,
 	input gpio_28,
 	input gpio_38
@@ -20,6 +21,7 @@ module top(
 
 	// map the sensor
 	wire lighthouse_a = gpio_28;
+	wire lighthouse_b = gpio_18;
 
 	wire clk_48;
 	wire reset = 0;
@@ -73,7 +75,7 @@ module top(
 	);
 
 	// output buffer
-	parameter FIFO_WIDTH = 80;
+	parameter FIFO_WIDTH = 28;
 	reg [FIFO_WIDTH-1:0] timer_fifo_write;
 	reg timer_fifo_write_strobe;
 	wire timer_fifo_available;
@@ -90,10 +92,10 @@ module top(
 		.read_strobe(timer_fifo_read_strobe)
 	);
 
-	wire [23:0] angle_a0;
-	wire [23:0] angle_a1;
-	wire [23:0] angle_a2;
-	wire [23:0] angle_a3;
+	wire [19:0] angle_a0;
+	wire [19:0] angle_a1;
+	wire [19:0] angle_a2;
+	wire [19:0] angle_a3;
 	wire [3:0] sweep_strobe_a;
 
 	lighthouse_sensor sensor_a(
@@ -107,19 +109,57 @@ module top(
 		.strobe(sweep_strobe_a)
 	);
 
+	wire [19:0] angle_b0;
+	wire [19:0] angle_b1;
+	wire [19:0] angle_b2;
+	wire [19:0] angle_b3;
+	wire [3:0] sweep_strobe_b;
+
+	lighthouse_sensor sensor_b(
+		.clk(clk_48),
+		.reset(reset),
+		.raw_pin(lighthouse_b),
+		.angle0(angle_b0),
+		.angle1(angle_b1),
+		.angle2(angle_b2),
+		.angle3(angle_b3),
+		.strobe(sweep_strobe_b)
+	);
+
 	always @(posedge clk_48)
 	begin
 		timer_fifo_write_strobe <= 0;
 
+		if (sweep_strobe_b != 0)
+		begin
+			timer_fifo_write_strobe <= 1;
+			if (sweep_strobe_b[0])
+				timer_fifo_write <= { 8'hB0, angle_b0[19:0] };
+			else
+			if (sweep_strobe_b[1])
+				timer_fifo_write <= { 8'hB1, angle_b1[19:0] };
+			else
+			if (sweep_strobe_b[2])
+				timer_fifo_write <= { 8'hB2, angle_b2[19:0] };
+			else
+			if (sweep_strobe_b[3])
+				timer_fifo_write <= { 8'hB3, angle_b3[19:0] };
+		end
+		else
 		if (sweep_strobe_a != 0)
 		begin
-			timer_fifo_write <= {
-				angle_a0[19:0],
-				angle_a1[19:0],
-				angle_a2[19:0],
-				angle_a3[19:0]
-			};
 			timer_fifo_write_strobe <= 1;
+			if (sweep_strobe_a[0])
+				timer_fifo_write <= { 8'hA0, angle_a0[19:0] };
+			else
+			if (sweep_strobe_a[1])
+				timer_fifo_write <= { 8'hA1, angle_a1[19:0] };
+			else
+			if (sweep_strobe_a[2])
+				timer_fifo_write <= { 8'hA2, angle_a2[19:0] };
+			else
+			if (sweep_strobe_a[3])
+				timer_fifo_write <= { 8'hA3, angle_a3[19:0] };
 		end
 	end
 
@@ -142,7 +182,7 @@ module top(
 			if (out_bytes == 2)
 				uart_txd <= "\n";
 			else
-			if (out_bytes == 3+5 || out_bytes == 3+11 || out_bytes == 3+17)
+			if (out_bytes == 3+5)
 				uart_txd <= " ";
 			else begin
 				uart_txd <= hexdigit(out[FIFO_WIDTH-1:FIFO_WIDTH-4]);
@@ -154,7 +194,7 @@ module top(
 		begin
 			out <= timer_fifo_read;
 			timer_fifo_read_strobe <= 1;
-			out_bytes <= 2 + 3 + FIFO_WIDTH/4;
+			out_bytes <= 2 + 1 + FIFO_WIDTH/4;
 		end
 	end
 
@@ -165,11 +205,11 @@ module lighthouse_sensor(
 	input clk,
 	input reset,
 	input raw_pin,
-	output reg [23:0] angle0,
-	output reg [23:0] angle1,
-	output reg [23:0] angle2,
-	output reg [23:0] angle3,
-	output ootx_bit,
+	output [19:0] angle0,
+	output [19:0] angle1,
+	output [19:0] angle2,
+	output [19:0] angle3,
+	output [1:0] ootx,
 	output [3:0] strobe
 );
 	parameter WIDTH = 24;
@@ -179,6 +219,15 @@ module lighthouse_sensor(
 	wire [WIDTH-1:0] sync0;
 	wire [WIDTH-1:0] sync1;
 	wire [24-1:0] sweep;
+
+	reg [19:0] angles[0:3];
+	assign angle0 = angles[0];
+	assign angle1 = angles[1];
+	assign angle2 = angles[2];
+	assign angle3 = angles[3];
+
+	wire skip0, axis0, valid0;
+	wire skip1, axis1, valid1;
 
 	lighthouse_sweep #(
 		.WIDTH(WIDTH),
@@ -193,69 +242,39 @@ module lighthouse_sensor(
 		.sweep_strobe(sweep_strobe)
 	);
 
-	wire skip0, data0, axis0, valid0;
-	wire skip1, data1, axis1, valid1;
-
 	lighthouse_sync_decode #(.MHZ(MHZ)) sync0_decode(
-		sync0, skip0, data0, axis0, valid0);
+		sync0, skip0, ootx[0], axis0, valid0);
 
 	lighthouse_sync_decode #(.MHZ(MHZ)) sync1_decode(
-		sync1, skip1, data1, axis1, valid1);
+		sync1, skip1, ootx[1], axis1, valid1);
 
 
 	always @(posedge clk)
 	begin
 		strobe <= 0;
 
-		if (reset)
-		begin
-			// nothing to do
+		if (reset || !valid0 || !valid1) begin
+			// nothing; ignore any pulses
 		end else
 		if (sweep_strobe) begin
-/* debuging sync pulses
-			strobe <= 15;
-
-			angle0 <= {
-				valid0, 2'b0, skip0,
-				3'b0, data0,
-				3'b0, axis0,
-				sync0[11+4:4]
-			};
-
-			angle1 <= {
-				valid1, 2'b0, skip1,
-				3'b0, data1,
-				3'b0, axis1,
-				sync1[11+4:4]
-			};
-
-			angle2 <= sweep;
-*/
-			if (!valid0 || !valid1) begin
-				// something isn't right, throw this one away
+			if (!skip0 && !skip1) begin
+				// should never happen.
 			end else
-			if (skip0 && skip1) begin
-				// this should never happen
+			if (!skip0 && axis0) begin
+				angles[0] <= sweep;
+				strobe[0] <= 1;
 			end else
-			if (!skip0) begin
-				// this is from motor 0
-				if (axis0) begin
-					angle0 <= sweep;
-					strobe[0] <= 1;
-				end else begin
-					angle1 <= sweep;
-					strobe[1] <= 1;
-				end
+			if (!skip0 && !axis0) begin
+				angles[1] <= sweep;
+				strobe[1] <= 1;
 			end else
-			if (!skip1) begin
-				// this is from motor 1
-				if (axis1) begin
-					angle2 <= sweep;
-					strobe[2] <= 1;
-				end else begin
-					angle3 <= sweep;
-					strobe[3] <= 1;
-				end
+			if (!skip1 && axis1) begin
+				angles[2] <= sweep;
+				strobe[2] <= 1;
+			end else
+			if (!skip1 && !axis1) begin
+				angles[3] <= sweep;
+				strobe[3] <= 1;
 			end
 		end
 	end
