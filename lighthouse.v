@@ -20,22 +20,39 @@ module top(
 	input gpio_47,
 	input gpio_45,
 	input gpio_48,
+	input gpio_3,
+	input gpio_4,
+	input gpio_44,
+	input gpio_6,
+	input gpio_42,
+	input gpio_36,
+	input gpio_34
 );
 	assign spi_cs = 1; // it is necessary to turn off the SPI flash chip
 
 	// map the sensor
 	parameter NUM_SENSORS = 4;
-	wire [7:0] lighthouse_pin = {
+	wire [15:0] lighthouse_pin = {
+		gpio_48,
+		gpio_3,
+		gpio_4,
+		gpio_44,
+
+		gpio_6,
+		gpio_42,
+		gpio_34,
+		gpio_36,
+
+		gpio_2,
+		gpio_46,
+		gpio_47,
+		gpio_45,
+
+		// really hooked up
 		gpio_28,
 		gpio_18,
 		gpio_38,
 		gpio_9
-/*
-		gpio_2,
-		gpio_46,
-		gpio_47,
-		gpio_45
-*/
 	};
 
 	wire clk_48;
@@ -128,6 +145,11 @@ module top(
 		);
 	end
 
+`define SHORT_OUTPUT(i) \
+	if (strobe[i][0]) begin \
+		fifo_write <= { 4'hA + i, 4'h0, angle0[i] }; \
+		fifo_write_strobe <= 1; \
+	end else
 
 `define OUTPUT(i) \
 	if (strobe[i][0]) begin \
@@ -160,6 +182,14 @@ module top(
 		`OUTPUT(5)
 		`OUTPUT(6)
 		`OUTPUT(7)
+		`OUTPUT(8)
+		`OUTPUT(9)
+		`OUTPUT(10)
+		`OUTPUT(11)
+		`OUTPUT(12)
+		`OUTPUT(13)
+		`OUTPUT(14)
+		`OUTPUT(15)
 */
 		begin end
 	end
@@ -218,8 +248,8 @@ module lighthouse_sensor(
 	parameter MHZ = 48;
 
 	wire sweep_strobe;
-	wire [WIDTH-1:0] sync0;
-	wire [WIDTH-1:0] sync1;
+	wire [10:0] sync0;
+	wire [10:0] sync1;
 	wire [20-1:0] sweep;
 
 	reg [19:0] angles[0:3];
@@ -292,20 +322,19 @@ endmodule
 //
 // This disagrees with https://github.com/nairol/LighthouseRedox/blob/master/docs/Light%20Emissions.md
 // but matches what I've seen on my lighthouses.
+//
 module lighthouse_sync_decode(
-	input [WIDTH-1:0] sync,
+	input [10:0] sync,
 	output skip,
 	output data,
 	output axis,
 	output valid
 );
 	parameter MHZ = 48; // we should do something with this
-	parameter WIDTH = 20;
 
-	wire [8:0] sync_short = sync[8+9:9];
-	assign valid = (6 <= sync_short) && (sync_short <= 13);
+	assign valid = (6 <= sync) && (sync <= 13);
 
-	wire [2:0] type = sync_short - 6;
+	wire [2:0] type = sync - 6;
 	assign skip = type[2];
 	assign data = type[1];
 	assign axis = type[0];
@@ -316,19 +345,20 @@ endmodule
  * This also reports the lengths of the two sync pulses so that
  * the correct axis and OOTX can be assigned.
 
-                 Sync      Data      Angle
+                 Data      Data      Angle
                 <----->   <-----><------------>
 _____   ________       ___       _____________   ___________
      |_|        |_____|   |_____|             |_|
     Sweep        Sync0     Sync1             Sweep
 
+ * Sync0 is from lighthouse A, sync1 is from lighthouse B
  */
 module lighthouse_sweep(
 	input clk,
 	input reset,
 	input raw_pin,
-	output reg [WIDTH-1:0] sync0,
-	output reg [WIDTH-1:0] sync1,
+	output reg [10:0] sync0,
+	output reg [10:0] sync1,
 	output reg [WIDTH-1:0] sweep,
 	output sweep_strobe
 );
@@ -384,7 +414,6 @@ module lighthouse_sweep(
 				// time is from the last rising edge to
 				// the midpoint of the sweep pulse
 				sweep <= counter - len/2 - last_rise;
-				//sweep <= duty;
 
 				// indicate that we have a sweep
 				got_sweep <= 1;
@@ -392,12 +421,12 @@ module lighthouse_sweep(
 			end else
 			if (got_sweep) begin
 				// first non-sweep pulse after a sweep
-				sync0 <= len;
+				sync0 <= len[10+9:9];
 				got_sweep <= 0;
 				got_sync1 <= 0;
 			end else begin
 				// second non-sweep pulse
-				sync1 <= len;
+				sync1 <= len[10+9:9];
 				got_sync1 <= 1;
 			end
 
