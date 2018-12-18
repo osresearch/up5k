@@ -73,13 +73,14 @@ module top(
 	);
 
 	// output buffer
-	reg [71:0] timer_fifo_write;
+	parameter FIFO_WIDTH = 80;
+	reg [FIFO_WIDTH-1:0] timer_fifo_write;
 	reg timer_fifo_write_strobe;
 	wire timer_fifo_available;
-	wire [71:0] timer_fifo_read;
+	wire [FIFO_WIDTH-1:0] timer_fifo_read;
 	reg timer_fifo_read_strobe;
 
-	fifo #(.WIDTH(8*3*3),.NUM(256)) timer_fifo(
+	fifo #(.WIDTH(FIFO_WIDTH),.NUM(16)) timer_fifo(
 		.clk(clk_48),
 		.reset(reset),
 		.data_available(timer_fifo_available),
@@ -93,7 +94,7 @@ module top(
 	wire [23:0] angle_a1;
 	wire [23:0] angle_a2;
 	wire [23:0] angle_a3;
-	wire sweep_strobe_a;
+	wire [3:0] sweep_strobe_a;
 
 	lighthouse_sensor sensor_a(
 		.clk(clk_48),
@@ -113,15 +114,16 @@ module top(
 		if (sweep_strobe_a != 0)
 		begin
 			timer_fifo_write <= {
-				angle_a0,
-				angle_a1,
-				angle_a2
+				angle_a0[19:0],
+				angle_a1[19:0],
+				angle_a2[19:0],
+				angle_a3[19:0]
 			};
 			timer_fifo_write_strobe <= 1;
 		end
 	end
 
-	reg [71:0] out;
+	reg [FIFO_WIDTH-1:0] out;
 	reg [5:0] out_bytes;
 
 	always @(posedge clk_48)
@@ -139,17 +141,20 @@ module top(
 			else
 			if (out_bytes == 2)
 				uart_txd <= "\n";
+			else
+			if (out_bytes == 3+5 || out_bytes == 3+11 || out_bytes == 3+17)
+				uart_txd <= " ";
 			else begin
-				uart_txd <= hexdigit(out[71:68]);
+				uart_txd <= hexdigit(out[FIFO_WIDTH-1:FIFO_WIDTH-4]);
+				out <= { out[FIFO_WIDTH-5:0], 4'b0 };
 			end
 
-			out <= { out[68:0], 4'b0 };
 		end else
 		if (timer_fifo_available)
 		begin
 			out <= timer_fifo_read;
 			timer_fifo_read_strobe <= 1;
-			out_bytes <= 20;
+			out_bytes <= 2 + 3 + FIFO_WIDTH/4;
 		end
 	end
 
@@ -206,8 +211,10 @@ module lighthouse_sensor(
 		begin
 			// nothing to do
 		end else
-		if (sweep_strobe) begin // and !invalid) begin
+		if (sweep_strobe) begin
+/* debuging sync pulses
 			strobe <= 15;
+
 			angle0 <= {
 				valid0, 2'b0, skip0,
 				3'b0, data0,
@@ -223,6 +230,33 @@ module lighthouse_sensor(
 			};
 
 			angle2 <= sweep;
+*/
+			if (!valid0 || !valid1) begin
+				// something isn't right, throw this one away
+			end else
+			if (skip0 && skip1) begin
+				// this should never happen
+			end else
+			if (!skip0) begin
+				// this is from motor 0
+				if (axis0) begin
+					angle0 <= sweep;
+					strobe[0] <= 1;
+				end else begin
+					angle1 <= sweep;
+					strobe[1] <= 1;
+				end
+			end else
+			if (!skip1) begin
+				// this is from motor 1
+				if (axis1) begin
+					angle2 <= sweep;
+					strobe[2] <= 1;
+				end else begin
+					angle3 <= sweep;
+					strobe[3] <= 1;
+				end
+			end
 		end
 	end
 
