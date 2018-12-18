@@ -7,6 +7,6 @@ serial.blif: serial.v uart.v util.v
 serial-echo.blif: serial-echo.v uart.v util.v
 spram-demo.blif: spram-demo.v spram.v uart.v util.v
 
-lighthouse.blif: lighthouse.v
+lighthouse.blif: lighthouse-demo.v
 
 include Makefile.icestorm

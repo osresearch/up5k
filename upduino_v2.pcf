@@ -16,11 +16,24 @@ set_io gpio_2 2
 set_io gpio_9 9
 set_io gpio_18 18
 set_io gpio_28 28
+
 set_io gpio_38 38
 set_io gpio_46 46
 set_io gpio_47 47
 set_io gpio_45 45
+
 set_io gpio_48 48
+set_io gpio_3 3
+set_io gpio_4 4
+set_io gpio_44 44
+
+set_io gpio_6 6
+set_io gpio_42 42
+set_io gpio_36 36
+set_io gpio_34 34
+
+set_io gpio_37 37
+
 
 # Debug pins
 #set_io debug0 46
