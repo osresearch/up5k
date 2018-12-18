@@ -11,19 +11,32 @@ module top(
 	output serial_txd,
 	input serial_rxd,
 	output spi_cs,
-	output debug0,
 	input gpio_9,
 	input gpio_18,
 	input gpio_28,
-	input gpio_38
+	input gpio_38,
+	input gpio_2,
+	input gpio_46,
+	input gpio_47,
+	input gpio_45,
+	input gpio_48,
 );
 	assign spi_cs = 1; // it is necessary to turn off the SPI flash chip
 
 	// map the sensor
-	wire lighthouse_a = gpio_28;
-	wire lighthouse_b = gpio_18;
-	wire lighthouse_c = gpio_38;
-	wire lighthouse_d = gpio_9;
+	parameter NUM_SENSORS = 4;
+	wire [7:0] lighthouse_pin = {
+		gpio_28,
+		gpio_18,
+		gpio_38,
+		gpio_9
+/*
+		gpio_2,
+		gpio_46,
+		gpio_47,
+		gpio_45
+*/
+	};
 
 	wire clk_48;
 	wire reset = 0;
@@ -61,7 +74,6 @@ module top(
 		.data_strobe(uart_rxd_strobe)
 	);
 
-	assign debug0 = serial_txd;
 	assign led_r = serial_txd;
 
 	reg [7:0] uart_txd;
@@ -94,110 +106,64 @@ module top(
 		.read_strobe(fifo_read_strobe)
 	);
 
-	wire [19:0] angle_a [0:3];
-	wire [3:0] strobe_a;
+	wire [19:0] angle0 [0:NUM_SENSORS-1];
+	wire [19:0] angle1 [0:NUM_SENSORS-1];
+	wire [19:0] angle2 [0:NUM_SENSORS-1];
+	wire [19:0] angle3 [0:NUM_SENSORS-1];
+	wire [3:0] strobe [0:NUM_SENSORS-1];
 
-	lighthouse_sensor sensor_a(
-		.clk(clk_48),
-		.reset(reset),
-		.raw_pin(lighthouse_a),
-		.angle0(angle_a[0]),
-		.angle1(angle_a[1]),
-		.angle2(angle_a[2]),
-		.angle3(angle_a[3]),
-		.strobe(strobe_a)
-	);
+	genvar i;
+	for(i = 0 ; i < NUM_SENSORS ; i = i+1)
+	begin
 
-	wire [19:0] angle_b [0:3];
-	wire [3:0] strobe_b;
+		lighthouse_sensor sensor(
+			.clk(clk_48),
+			.reset(reset),
+			.raw_pin(lighthouse_pin[i]),
+			.angle0(angle0[i]),
+			.angle1(angle1[i]),
+			.angle2(angle2[i]),
+			.angle3(angle3[i]),
+			.strobe(strobe[i])
+		);
+	end
 
-	lighthouse_sensor sensor_b(
-		.clk(clk_48),
-		.reset(reset),
-		.raw_pin(lighthouse_b),
-		.angle0(angle_b[0]),
-		.angle1(angle_b[1]),
-		.angle2(angle_b[2]),
-		.angle3(angle_b[3]),
-		.strobe(strobe_b)
-	);
 
-	wire [19:0] angle_c [0:3];
-	wire [3:0] strobe_c;
-
-	lighthouse_sensor sensor_c(
-		.clk(clk_48),
-		.reset(reset),
-		.raw_pin(lighthouse_c),
-		.angle0(angle_c[0]),
-		.angle1(angle_c[1]),
-		.angle2(angle_c[2]),
-		.angle3(angle_c[3]),
-		.strobe(strobe_c)
-	);
-
-	wire [19:0] angle_d [0:3];
-	wire [3:0] strobe_d;
-
-	lighthouse_sensor sensor_d(
-		.clk(clk_48),
-		.reset(reset),
-		.raw_pin(lighthouse_d),
-		.angle0(angle_d[0]),
-		.angle1(angle_d[1]),
-		.angle2(angle_d[2]),
-		.angle3(angle_d[3]),
-		.strobe(strobe_d)
-	);
+`define OUTPUT(i) \
+	if (strobe[i][0]) begin \
+		fifo_write <= { 4'hA + i, 4'h0, angle0[i] }; \
+		fifo_write_strobe <= 1; \
+	end else \
+	if (strobe[i][1]) begin \
+		fifo_write <= { 4'hA + i, 4'h1, angle1[i] }; \
+		fifo_write_strobe <= 1; \
+	end else \
+	if (strobe[i][2]) begin \
+		fifo_write <= { 4'hA + i, 4'h2, angle2[i] }; \
+		fifo_write_strobe <= 1; \
+	end else \
+	if (strobe[i][3]) begin \
+		fifo_write <= { 4'hA + i, 4'h3, angle3[i] }; \
+		fifo_write_strobe <= 1; \
+	end else
 
 	always @(posedge clk_48)
 	begin
-		fifo_write_strobe <= 0
-			| (strobe_a != 0)
-			| (strobe_b != 0)
-			| (strobe_c != 0)
-			| (strobe_d != 0);
+		fifo_write_strobe <= 0;
 
-		if (strobe_a[0]) fifo_write <= { 8'hA0, angle_a[0][19:0] };
-		else
-		if (strobe_a[1]) fifo_write <= { 8'hA1, angle_a[1][19:0] };
-		else
-		if (strobe_a[2]) fifo_write <= { 8'hA2, angle_a[2][19:0] };
-		else
-		if (strobe_a[3]) fifo_write <= { 8'hA3, angle_a[3][19:0] };
-		else
-
-		if (strobe_b[0]) fifo_write <= { 8'hB0, angle_b[0][19:0] };
-		else
-		if (strobe_b[1]) fifo_write <= { 8'hB1, angle_b[1][19:0] };
-		else
-		if (strobe_b[2]) fifo_write <= { 8'hB2, angle_b[2][19:0] };
-		else
-		if (strobe_b[3]) fifo_write <= { 8'hB3, angle_b[3][19:0] };
-		else
-
-		if (strobe_c[0]) fifo_write <= { 8'hC0, angle_c[0][19:0] };
-		else
-		if (strobe_c[1]) fifo_write <= { 8'hC1, angle_c[1][19:0] };
-		else
-		if (strobe_c[2]) fifo_write <= { 8'hC2, angle_c[2][19:0] };
-		else
-		if (strobe_c[3]) fifo_write <= { 8'hC3, angle_c[3][19:0] };
-		else
-
-		if (strobe_d[0]) fifo_write <= { 8'hD0, angle_d[0][19:0] };
-		else
-		if (strobe_d[1]) fifo_write <= { 8'hD1, angle_d[1][19:0] };
-		else
-		if (strobe_d[2]) fifo_write <= { 8'hD2, angle_d[2][19:0] };
-		else
-		if (strobe_d[3]) fifo_write <= { 8'hD3, angle_d[3][19:0] };
-		else
-
-		begin
-			// nothing
-		end
+		`OUTPUT(0)
+		`OUTPUT(1)
+		`OUTPUT(2)
+		`OUTPUT(3)
+/*
+		`OUTPUT(4)
+		`OUTPUT(5)
+		`OUTPUT(6)
+		`OUTPUT(7)
+*/
+		begin end
 	end
+
 
 	reg [FIFO_WIDTH-1:0] out;
 	reg [5:0] out_bytes;
