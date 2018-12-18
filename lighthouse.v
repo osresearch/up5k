@@ -89,31 +89,33 @@ module top(
 		.read_strobe(timer_fifo_read_strobe)
 	);
 
-	wire [23:0] sync0_a;
-	wire [23:0] sync1_a;
-	wire [23:0] sweep_a;
+	wire [23:0] angle_a0;
+	wire [23:0] angle_a1;
+	wire [23:0] angle_a2;
+	wire [23:0] angle_a3;
 	wire sweep_strobe_a;
 
-	lighthouse_sweep sensor_a(
+	lighthouse_sensor sensor_a(
 		.clk(clk_48),
 		.reset(reset),
 		.raw_pin(lighthouse_a),
-		.sync0(sync0_a),
-		.sync1(sync1_a),
-		.sweep(sweep_a),
-		.sweep_strobe(sweep_strobe_a)
+		.angle0(angle_a0),
+		.angle1(angle_a1),
+		.angle2(angle_a2),
+		.angle3(angle_a3),
+		.strobe(sweep_strobe_a)
 	);
 
 	always @(posedge clk_48)
 	begin
 		timer_fifo_write_strobe <= 0;
 
-		if (sweep_strobe_a)
+		if (sweep_strobe_a != 0)
 		begin
 			timer_fifo_write <= {
-				sync0_a,
-				sync1_a,
-				sweep_a
+				angle_a0,
+				angle_a1,
+				angle_a2
 			};
 			timer_fifo_write_strobe <= 1;
 		end
@@ -153,6 +155,105 @@ module top(
 
 endmodule
 
+
+module lighthouse_sensor(
+	input clk,
+	input reset,
+	input raw_pin,
+	output reg [23:0] angle0,
+	output reg [23:0] angle1,
+	output reg [23:0] angle2,
+	output reg [23:0] angle3,
+	output ootx_bit,
+	output [3:0] strobe
+);
+	parameter WIDTH = 24;
+	parameter MHZ = 48;
+
+	wire sweep_strobe;
+	wire [WIDTH-1:0] sync0;
+	wire [WIDTH-1:0] sync1;
+	wire [24-1:0] sweep;
+
+	lighthouse_sweep #(
+		.WIDTH(WIDTH),
+		.CLOCKS_PER_MICROSECOND(MHZ)
+	) lh_sweep(
+		.clk(clk),
+		.reset(reset),
+		.raw_pin(raw_pin),
+		.sync0(sync0),
+		.sync1(sync1),
+		.sweep(sweep),
+		.sweep_strobe(sweep_strobe)
+	);
+
+	wire skip0, data0, axis0, valid0;
+	wire skip1, data1, axis1, valid1;
+
+	lighthouse_sync_decode #(.MHZ(MHZ)) sync0_decode(
+		sync0, skip0, data0, axis0, valid0);
+
+	lighthouse_sync_decode #(.MHZ(MHZ)) sync1_decode(
+		sync1, skip1, data1, axis1, valid1);
+
+
+	always @(posedge clk)
+	begin
+		strobe <= 0;
+
+		if (reset)
+		begin
+			// nothing to do
+		end else
+		if (sweep_strobe) begin // and !invalid) begin
+			strobe <= 15;
+			angle0 <= {
+				valid0, 2'b0, skip0,
+				3'b0, data0,
+				3'b0, axis0,
+				sync0[11+4:4]
+			};
+
+			angle1 <= {
+				valid1, 2'b0, skip1,
+				3'b0, data1,
+				3'b0, axis1,
+				sync1[11+4:4]
+			};
+
+			angle2 <= sweep;
+		end
+	end
+
+endmodule
+
+
+// at 48 MHz every sync pulse is a 512 tick window
+// so we only look at the top few bits,
+// which encode the skip/data/axis bits:
+//
+// length = 3072 + axis*512 + data*1024 + skip*2048
+//
+// This disagrees with https://github.com/nairol/LighthouseRedox/blob/master/docs/Light%20Emissions.md
+// but matches what I've seen on my lighthouses.
+module lighthouse_sync_decode(
+	input [23:0] sync,
+	output skip,
+	output data,
+	output axis,
+	output valid
+);
+	parameter MHZ = 48; // we should do something with this
+
+	wire [8:0] sync_short = sync[8+9:9];
+	assign valid = (6 <= sync_short) && (sync_short <= 13);
+
+	wire [2:0] type = sync_short - 6;
+	assign skip = type[2];
+	assign data = type[1];
+	assign axis = type[0];
+endmodule
 
 /*
  * Measure the raw sweep times for the sensor.
