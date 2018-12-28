@@ -9,6 +9,8 @@
  * The SPI flash chip select *MUST* be pulled high to disable the
  * flash chip, otherwise they will both be driving the bus.
  */
+`include "util.v"
+`include "uart.v"
 
 module top(
 	output led_r,

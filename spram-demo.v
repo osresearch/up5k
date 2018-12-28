@@ -9,6 +9,9 @@
  * SPRAM and clocked out slowly to show how much the FIFO can store.
  * If you overflow the FIFO, bad things happen.
  */
+`include "util.v"
+`include "spram.v"
+`include "uart.v"
 
 module top(
 	output led_r,

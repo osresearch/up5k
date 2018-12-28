@@ -27,7 +27,7 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 	$(ICEPATH)yosys \
 		-q \
 		-p "synth_ice40 -top top -json $@" \
-		$^
+		$<
 
 %.asc: $(PIN_SRC) %.json
 	$(PNR) \

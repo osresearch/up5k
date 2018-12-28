@@ -12,6 +12,8 @@
  * The USB port will have to be cycled to get the FTDI to renumerate as
  * /dev/ttyUSB0.  Not sure what is going on with iceprog.
  */
+`include "util.v"
+`include "uart.v"
 
 module top(
 	output led_r,

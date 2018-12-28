@@ -3,6 +3,7 @@
  *
  * Note that the LED pins are inverted, so 0 is on
  */
+`include "util.v"
 
 module top(
 	output led_r,
