@@ -42,8 +42,6 @@ module top(
 	pwm pwm_g_driver(clk_48, 1, pwm_g);
 	assign led_g = !(counter[25:23] == 0 && pwm_g);
 
-	assign led_b = serial_rxd; // idles high
-
 	// generate a 3 MHz/12 MHz serial clock from the 48 MHz clock
 	// this is the 3 Mb/s maximum supported by the FTDI chip
 	wire clk_1, clk_4;
@@ -53,9 +51,6 @@ module top(
 	reg [7:0] uart_txd;
 	reg uart_txd_strobe;
 	wire uart_txd_ready;
-
-	wire [7:0] uart_rxd;
-	wire uart_rxd_strobe;
 
 	uart_tx txd(
 		.mclk(clk_48),
@@ -68,6 +63,9 @@ module top(
 	);
 
 /* this demo doesn't use the serial port
+	wire [7:0] uart_rxd;
+	wire uart_rxd_strobe;
+
 	uart_rx rxd(
 		.mclk(clk_48),
 		.reset(reset),
@@ -83,10 +81,19 @@ module top(
 	wire spi_rx_strobe;
 	wire [7:0] spi_rx_data;
 
+	wire spi_cs_in;
+	SB_IO #(
+		.PIN_TYPE(1), // input
+		.PULLUP(1), // pullup enabled
+	) keypad_c1_config (
+		.PACKAGE_PIN(gpio_28),
+		.D_IN_0(spi_cs_in)
+	);
+
 	spi_device #(.MONITOR(1)) spi0(
 		.mclk(clk_48),
 		.reset(reset),
-		.spi_cs(gpio_28),
+		.spi_cs(spi_cs_in),
 		.spi_clk(gpio_38),
 		.spi_mosi(gpio_42),
 		.spi_miso(gpio_36),
@@ -101,10 +108,12 @@ module top(
 	reg spi_cs_prev;
 	reg spi_cs_sync;
 
+	assign led_b = spi_cs_sync; // idles high
+
 	// watch for new commands on the SPI bus, print first x bytes
 	always @(posedge clk_48)
 	begin
-		spi_cs_buf <= gpio_28;
+		spi_cs_buf <= spi_cs_in;
 		spi_cs_prev <= spi_cs_buf;
 		spi_cs_sync <= spi_cs_prev;
 
