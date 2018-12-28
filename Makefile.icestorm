@@ -5,13 +5,14 @@ DEVICE ?= 5k
 FOOTPRNT ?= sg48
 PIN_SRC ?= upduino_v2.pcf
 ICEPATH ?=
+PNR ?= $(ICEPATH)nextpnr-ice40
 
 .SECONDARY:
 
 %.flash: %.bin
 	$(ICEPATH)iceprog -e 128 # Force a reset
 	$(ICEPATH)iceprog $<
-	echo > /sys/bus/usb/drivers/ftdi_sio/bind 1-1:1.0 # re-attach serial
+	echo 1-1:1.0 | tee /sys/bus/usb/drivers/ftdi_sio/bind
 
 %.bin: %.asc
 	$(ICEPATH)icepack $< $@
@@ -22,13 +23,19 @@ ICEPATH ?=
 		-p "synth_ice40 -top top -blif $@" \
 		$^
 
-%.asc: $(PIN_SRC) %.blif
-	$(ICEPATH)arachne-pnr \
-		-d $(DEVICE) \
-		-P $(FOOTPRNT) \
-		-o $@ \
-		-p \
+%.json:
+	$(ICEPATH)yosys \
+		-q \
+		-p "synth_ice40 -top top -json $@" \
 		$^
+
+%.asc: $(PIN_SRC) %.json
+	$(PNR) \
+		--up5k \
+		--package $(FOOTPRNT) \
+		--asc $@ \
+		--pcf $(PIN_SRC) \
+		--json $(basename $@).json
 
 %.timing: %.asc
 	$(ICEPATH)icetime \
@@ -60,5 +67,5 @@ $(foreach t,$(TEST-y),$(eval $(call make-test,$t)))
 	iverilog -o $@ -s $(basename $@) $^
 
 clean:
-	$(RM) *.blif *.asc *.bin
+	$(RM) *.blif *.asc *.bin *.json
 

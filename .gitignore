@@ -4,3 +4,4 @@
 *.asc
 *.timing
 pll_*.v
+*.json
