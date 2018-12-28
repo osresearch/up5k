@@ -1,10 +1,12 @@
 /** \file
- * Monitor a flash device and print the addresses read
+ * Print a hexdump of the incoming serial data.
  *
  * The up5k has 1024 Kb of single ported block RAM.
  * This is can't read/write simultaneously, so it is necessary to
  * mux the read/write pins.
  *
+ * This tests the 16to8 fifo, which allows us to enqueue two characters
+ * at a time into the tx fifo, perfect for hexdumps.
  */
 `include "util.v"
 `include "uart.v"
