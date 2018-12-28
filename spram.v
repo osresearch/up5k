@@ -90,3 +90,64 @@ module fifo_spram(
 	end
 
 endmodule
+
+
+// This works like the dual-ported FIFO, but the read_data is
+// only available when write_strobe is not set.  Writes 16-bits at
+// a time, reads 8-bits at a time for hex chars.
+module fifo_spram_16to8(
+	input clk,
+	input reset,
+	output data_available,
+	input [16-1:0] write_data,
+	input write_strobe,
+	output [8-1:0] read_data,
+	input read_strobe
+);
+	parameter BITS = 15;
+
+	reg [BITS-1:0] write_ptr;
+	reg [BITS-1:0] read_ptr;
+
+	// reads are 16-bits at a time
+	wire [15:0] rdata_16;
+	assign read_data = (!read_ptr[0]) ? rdata_16[15:8] : rdata_16[7:0];
+
+	SB_SPRAM256KA ram(
+		// read 16 bits at a time
+		.DATAOUT(rdata_16),
+
+		// ignore the bottom bit of the address
+		.ADDRESS(write_strobe ? write_ptr[BITS-1:1] : read_ptr[BITS-1:1]),
+
+		.DATAIN(write_data),
+
+		// always write to both bytes
+		.MASKWREN(4'b1111),
+		.WREN(write_strobe),
+
+		.CHIPSELECT(!reset),
+		.CLOCK(clk),
+
+		// if we cared about power, maybe we would adjust these
+		.STANDBY(1'b0),
+		.SLEEP(1'b0),
+		.POWEROFF(1'b1)
+	);
+
+	assign data_available = read_ptr != write_ptr;
+
+	always @(posedge clk)
+	begin
+		if (reset) begin
+			write_ptr <= 0;
+			read_ptr <= 0;
+		end else begin
+			if (write_strobe)
+				write_ptr <= write_ptr + 2;
+			if (read_strobe)
+				read_ptr <= read_ptr + 1;
+		end
+	end
+
+endmodule
