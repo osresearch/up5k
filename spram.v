@@ -104,12 +104,15 @@ module fifo_spram_16to8(
 	output [8-1:0] read_data,
 	input read_strobe
 );
+	// BITS should always be 15 since the SPRAM can't be
+	// partially allocated.
 	parameter BITS = 15;
 
 	reg [BITS-1:0] write_ptr;
 	reg [BITS-1:0] read_ptr;
 
-	// reads are 16-bits at a time
+	// reads from the SPRAM are 16-bits at a time,
+	// so we have to pick which byte of the word should be extracted
 	wire [15:0] rdata_16;
 	assign read_data = (!read_ptr[0]) ? rdata_16[15:8] : rdata_16[7:0];
 
@@ -118,7 +121,10 @@ module fifo_spram_16to8(
 		.DATAOUT(rdata_16),
 
 		// ignore the bottom bit of the address
-		.ADDRESS(write_strobe ? write_ptr[BITS-1:1] : read_ptr[BITS-1:1]),
+		.ADDRESS(write_strobe
+			? write_ptr[BITS-1:1]
+			: read_ptr[BITS-1:1]
+		),
 
 		.DATAIN(write_data),
 
