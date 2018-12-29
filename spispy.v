@@ -17,21 +17,25 @@ module top(
 	output led_b,
 	output serial_txd,
 	input serial_rxd,
-	output spi_cs,
+	output spi_cs, // to the onboard flash chip
+
+	// to the 
 	input gpio_28,
 	input gpio_38,
 	input gpio_42,
-	input gpio_36
+	input gpio_36,
+	output gpio_43 // copy of gpio_36, to pass through the CS
 );
 	assign spi_cs = 1; // it is necessary to turn off the SPI flash chip
 
 	wire clk_48;
-	wire reset = 0;
 	SB_HFOSC u_hfosc (
 		.CLKHFPU(1'b1),
 		.CLKHFEN(1'b1),
 		.CLKHF(clk_48)
 	);
+
+	wire reset = 0;
 
 	reg [31:0] counter;
 	always @(posedge clk_48)
@@ -81,27 +85,44 @@ module top(
 	wire spi_rx_strobe;
 	wire [7:0] spi_rx_data;
 
-	wire spi_cs_in;
+/* 35c3 cable:
+ * 1 cs on chip		43
+ * 2 cs on mainboard	36
+ * 3 miso		42
+ * 4 !wp
+ * 5 gnd		GND
+ * 6 mosi		38
+ * 7 sck		28
+ * 8 !rst
+ * 9 vcc
+ */
+
+	wire spi_cs_in = gpio_36;
+/*
 	SB_IO #(
 		.PIN_TYPE(1), // input
 		.PULLUP(1), // pullup enabled
 	) spi_cs_buffer (
-		.PACKAGE_PIN(gpio_28),
+		.PACKAGE_PIN(gpio_36),
 		.D_IN_0(spi_cs_in)
 	);
+*/
+
+	// copy the incoming CS pin to the outbound CS
+	assign gpio_43 = gpio_36;
 
 	spi_device #(.MONITOR(1)) spi0(
 		.mclk(clk_48),
 		.reset(reset),
 		.spi_cs(spi_cs_in),
-		.spi_clk(gpio_38),
-		.spi_mosi(gpio_42),
-		.spi_miso(gpio_36),
+		.spi_clk(gpio_28),
+		.spi_mosi(gpio_38),
+		.spi_miso(gpio_42),
 		.spi_rx_strobe(spi_rx_strobe),
 		.spi_rx_data(spi_rx_data)
 	);
 
-	reg [3:0] bytes;
+	reg [12:0] bytes;
 	reg newline;
 	reg spi_ready;
 	reg spi_cs_buf;
@@ -109,6 +130,14 @@ module top(
 	reg spi_cs_sync;
 
 	assign led_b = spi_cs_sync; // idles high
+
+	reg read_in_progress;
+	reg [23:0] read_addr;
+	reg [7:0] flash_rom[0:255];
+	wire [7:0] flash_data = flash_rom[read_addr[7:0]];
+
+	// initialize the flash_rom
+	initial $readmemb("flash.bin", flash_rom);
 
 	// watch for new commands on the SPI bus, print first x bytes
 	always @(posedge clk_48)
@@ -128,21 +157,41 @@ module top(
 		if (!spi_cs_sync && spi_cs_prev) begin
 			// falling edge of the CS, reset the transaction
 			bytes <= 0;
+			if (read_in_progress) begin
+				newline <= 1;
+				spi_ready <= 1;
+			end
+			read_in_progress <= 0;
 		end else
 		if (spi_cs_sync && !spi_cs_prev) begin
 			// rising edge of the CS, send newline if we
 			// have received a non-zero number of bytes
-			if (bytes != 0) begin
+			if (read_in_progress) begin
 				newline <= 1;
 				spi_ready <= 1;
 			end
+			read_in_progress <= 0;
 		end else
 		if (spi_rx_strobe) begin
 			// new byte on the wire; print the first four bytes
-			if (bytes <= 4)
+			// parse the command in the first byte
+			if (bytes == 0 && spi_rx_data == 3) begin
+				//spi_ready <= 1;
+				read_in_progress <= 1;
+			end else
+			if (bytes <= 3 && read_in_progress)
+			begin
 				spi_ready <= 1;
-			if (bytes != 7)
-				bytes <= bytes + 1;
+				read_addr <= { read_addr[15:8], spi_rx_data };
+				//if (bytes == 3 && read_addr[
+			end else
+			if (read_in_progress)
+			begin
+				spi_tx_data <= flash_rom[read_addr];
+				read_addr <= read_addr + 1;
+			end
+
+			bytes <= bytes + 1;
 		end
 	end
 
