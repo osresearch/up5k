@@ -85,7 +85,7 @@ module top(
 	SB_IO #(
 		.PIN_TYPE(1), // input
 		.PULLUP(1), // pullup enabled
-	) keypad_c1_config (
+	) spi_cs_buffer (
 		.PACKAGE_PIN(gpio_28),
 		.D_IN_0(spi_cs_in)
 	);
@@ -113,10 +113,12 @@ module top(
 	// watch for new commands on the SPI bus, print first x bytes
 	always @(posedge clk_48)
 	begin
+		// Double buffer and latch the SPI CS to track edges
 		spi_cs_buf <= spi_cs_in;
 		spi_cs_prev <= spi_cs_buf;
 		spi_cs_sync <= spi_cs_prev;
 
+		// Default is no output from the SPI bus
 		newline <= 0;
 		spi_ready <= 0;
 
@@ -136,7 +138,7 @@ module top(
 			end
 		end else
 		if (spi_rx_strobe) begin
-			// new byte on the wire; print the first four
+			// new byte on the wire; print the first four bytes
 			if (bytes <= 4)
 				spi_ready <= 1;
 			if (bytes != 7)
