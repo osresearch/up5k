@@ -26,15 +26,14 @@
  */
 
 
-module spi_device #(
-	parameter MONITOR=0
-)(
+module spi_device(
 	input mclk,
 	input reset,
 	input spi_cs,		// active low
 	input spi_clk,
 	input spi_mosi,		// should be inout for dual/quad
-	input spi_miso,		// if in monitor mode, need inout for driving
+	input spi_miso_in,	// input from the bus for monitor mode
+	output spi_miso_out,	// output to the SPI bus for driving mode
 	output reg spi_rx_strobe,
 	output reg [7:0] spi_rx_data, // should be 32 bits for quad
 	input spi_tx_strobe,
@@ -46,22 +45,15 @@ module spi_device #(
    reg           spi_clk_prev;
    wire          spi_clk_posedge = spi_clk_sync && !spi_clk_prev;
    wire          spi_clk_negedge = !spi_clk_sync && spi_clk_prev;
-   reg           spi_miso_out;
 
    /* Input sync */
    d_flipflop_pair spi_dff_clk(mclk, reset, spi_clk, spi_clk_sync);
    d_flipflop_pair spi_dff_mosi(mclk, reset, spi_mosi, spi_mosi_sync);
-   d_flipflop_pair spi_dff_miso(mclk, reset, spi_miso, spi_miso_sync);
+   d_flipflop_pair spi_dff_miso(mclk, reset, spi_miso_in, spi_miso_sync);
    d_flipflop_pair spi_dff_cs(mclk, reset, spi_cs, spi_cs_sync);
 
    /* For clock edge detection */
    //d_flipflop spi_dff_clk_2(mclk, reset, spi_clk_sync, spi_clk_prev);
-
-   /* Tri-state output buffer.
-    *  In monitor mode we always tri-state.
-    *  Otherwise use non-sync'ed CS.
-    */
-   //assign spi_miso = MONITOR || spi_cs ? 1'bZ : spi_miso_out;
 
 
    /************************************************
@@ -69,22 +61,22 @@ module spi_device #(
     */
 
    reg [2:0]     bit_count;
-   reg [7:0]     miso_reg;
+   reg [7:0]     miso_reg_in;
+   reg [7:0]     miso_reg_out;
    reg [7:0]     mosi_reg;
 
    always @(posedge mclk)
    begin
+	spi_clk_prev <= spi_clk_sync;
+	spi_rx_strobe <= 0;
+
      /*
       * Master reset or chip deselect: Reset everything.
       */
-	spi_clk_prev <= spi_clk;
 
      if (reset || spi_cs) begin
         bit_count <= 0;
-        mosi_reg <= 0;
-        miso_reg <= 8'hFF;
         spi_miso_out <= 1;
-        spi_rx_strobe <= 0;
      end
 
      /*
@@ -99,30 +91,21 @@ module spi_device #(
         bit_count <= bit_count + 1;
 	if (bit_count == 7) begin
 		spi_rx_strobe <= 1;
+		//spi_rx_data <= {mosi_reg[6:0], spi_mosi_sync};
 		spi_rx_data <= {mosi_reg[6:0], spi_mosi_sync};
-		if (MONITOR)
-			spi_mon_data <= { miso_reg[6:0], spi_miso};
+		spi_mon_data <= { miso_reg_in[6:0], spi_miso_sync};
 	end else begin
-		spi_rx_strobe <= 0;
 		mosi_reg <= {mosi_reg[6:0], spi_mosi_sync};
-		if (MONITOR)
-			miso_reg <= { miso_reg[6:0], spi_miso};
+		miso_reg_in <= { miso_reg_in[6:0], spi_miso_sync};
 	end
-     end
-     else if (spi_clk_negedge && !MONITOR) begin
-	miso_reg <= {miso_reg[6:0], 1'b1};
-	spi_miso_out <= miso_reg[7];
-	spi_rx_strobe <= 0;
-     end else begin
-	spi_rx_strobe <= 0;
-     end
-
-     /* Input data must occur before the next SPI clock edge.
-      * In monitor mode we ignore the tx strobe since data is always output.
-      */
-     if (spi_tx_strobe && !MONITOR) begin
-        miso_reg <= spi_tx_data;
+     end else
+     if (spi_clk_negedge) begin
+	// update the output pin on the falling clock edge
+	spi_miso_out <= miso_reg_out[7];
+	miso_reg_out <= {miso_reg_out[6:0], 1'b1};
+     end else
+     if (spi_tx_strobe) begin
+        miso_reg_out <= spi_tx_data;
      end
      end
-
 endmodule
