@@ -17,16 +17,11 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 %.bin: %.asc
 	$(ICEPATH)icepack $< $@
 
-%.blif:
-	$(ICEPATH)yosys \
-		-q \
-		-p "synth_ice40 -top top -blif $@" \
-		$^
-
-%.json:
+%.json: %.v
 	$(ICEPATH)yosys \
 		-q \
 		-p "synth_ice40 -top top -json $@" \
+		-E .$(basename $@).d \
 		$<
 
 %.asc: $(PIN_SRC) %.json
@@ -35,13 +30,11 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 		--package $(FOOTPRNT) \
 		--asc $@ \
 		--pcf $(PIN_SRC) \
-		--json $(basename $@).json
+		--json $(basename $@).json \
+		`[ -r $(basename $@).py ] && echo --pre-pack $(basename $@).py` \
 
-%.timing: %.asc
-	$(ICEPATH)icetime \
-		-r $@ \
-		-t $<
-	tail -10 $@
+%.gui: %.json
+	$(PNR) --gui --up5k --pcf $(PIN_SRC) --json $<
 
 %.bin: %.asc
 	$(ICEPATH)icepack $^ $@
@@ -67,5 +60,6 @@ $(foreach t,$(TEST-y),$(eval $(call make-test,$t)))
 	iverilog -o $@ -s $(basename $@) $^
 
 clean:
-	$(RM) *.blif *.asc *.bin *.json
+	$(RM) *.blif *.asc *.bin *.json .*.d
 
+-include .*.d

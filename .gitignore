@@ -5,3 +5,4 @@
 *.timing
 pll_*.v
 *.json
+.*.d
