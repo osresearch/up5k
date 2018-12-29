@@ -37,6 +37,7 @@ module top(
 
 	wire reset = 0;
 
+/*
 	reg [31:0] counter;
 	always @(posedge clk_48)
 		counter <= counter + 1;
@@ -45,6 +46,9 @@ module top(
 	wire pwm_g;
 	pwm pwm_g_driver(clk_48, 1, pwm_g);
 	assign led_g = !(counter[25:23] == 0 && pwm_g);
+*/
+	assign led_g = 1;
+
 
 	// generate a 3 MHz/12 MHz serial clock from the 48 MHz clock
 	// this is the 3 Mb/s maximum supported by the FTDI chip
@@ -81,7 +85,17 @@ module top(
 
 	assign debug0 = serial_txd;
 */
+
+	// Emlated 256 bytes of flash ROM
+	reg [23:0] read_addr;
+	reg [7:0] flash_rom[0:255];
+	wire [7:0] flash_data = flash_rom[read_addr[7:0]];
+
+	// initialize the flash_rom
+	initial $readmemb("flash.bin", flash_rom);
+
 	// Connect the SPI port to the decoder
+	reg spi_tx_strobe;
 	wire spi_rx_strobe;
 	wire [7:0] spi_rx_data;
 
@@ -98,33 +112,28 @@ module top(
  */
 
 	wire spi_cs_in = gpio_36;
-/*
-	SB_IO #(
-		.PIN_TYPE(1), // input
-		.PULLUP(1), // pullup enabled
-	) spi_cs_buffer (
-		.PACKAGE_PIN(gpio_36),
-		.D_IN_0(spi_cs_in)
-	);
-*/
 
 	// copy the incoming CS pin to the outbound CS
 	assign gpio_43 = gpio_36;
 
-	spi_device #(.MONITOR(1)) spi0(
+	spi_device spi0(
 		.mclk(clk_48),
 		.reset(reset),
 		.spi_cs(spi_cs_in),
 		.spi_clk(gpio_28),
 		.spi_mosi(gpio_38),
-		.spi_miso(gpio_42),
+		.spi_miso_in(gpio_42),
+		//.spi_miso_out(),
+		.spi_tx_data(flash_data),
+		.spi_tx_strobe(spi_tx_strobe),
 		.spi_rx_strobe(spi_rx_strobe),
 		.spi_rx_data(spi_rx_data)
 	);
 
 	reg [12:0] bytes;
-	reg newline;
-	reg spi_ready;
+	reg [15:0] serial_out;
+	reg do_serial;
+	reg do_hex;
 	reg spi_cs_buf;
 	reg spi_cs_prev;
 	reg spi_cs_sync;
@@ -132,13 +141,6 @@ module top(
 	assign led_b = spi_cs_sync; // idles high
 
 	reg read_in_progress;
-	reg [23:0] read_addr;
-	reg [7:0] flash_rom[0:255];
-	wire [7:0] flash_data = flash_rom[read_addr[7:0]];
-
-	// initialize the flash_rom
-	initial $readmemb("flash.bin", flash_rom);
-
 	// watch for new commands on the SPI bus, print first x bytes
 	always @(posedge clk_48)
 	begin
@@ -148,8 +150,8 @@ module top(
 		spi_cs_sync <= spi_cs_prev;
 
 		// Default is no output from the SPI bus
-		newline <= 0;
-		spi_ready <= 0;
+		do_serial <= 0;
+		do_hex <= 0;
 
 		if (reset) begin
 			// nothing to do
@@ -158,42 +160,52 @@ module top(
 			// falling edge of the CS, reset the transaction
 			bytes <= 0;
 			if (read_in_progress) begin
-				newline <= 1;
-				spi_ready <= 1;
+				serial_out = "\r\n";
+				do_serial <= 1;
 			end
 			read_in_progress <= 0;
 		end else
 		if (spi_cs_sync && !spi_cs_prev) begin
 			// rising edge of the CS, send newline if we
 			// have received a non-zero number of bytes
-			if (read_in_progress) begin
-				newline <= 1;
-				spi_ready <= 1;
-			end
 			read_in_progress <= 0;
 		end else
 		if (spi_rx_strobe) begin
 			// new byte on the wire; print the first four bytes
 			// parse the command in the first byte
 			if (bytes == 0 && spi_rx_data == 3) begin
-				//spi_ready <= 1;
 				read_in_progress <= 1;
 			end else
 			if (bytes <= 3 && read_in_progress)
 			begin
-				spi_ready <= 1;
 				read_addr <= { read_addr[15:8], spi_rx_data };
-				//if (bytes == 3 && read_addr[
+				do_serial <= 1;
+				do_hex <= 1;
 			end else
 			if (read_in_progress)
 			begin
-				spi_tx_data <= flash_rom[read_addr];
 				read_addr <= read_addr + 1;
 			end
 
 			bytes <= bytes + 1;
+		end else begin
+/*
+			if (read_addr == 24'hFFB880) begin
+				// disable flash address overlays
+				do_overlay <= 0;
+				do_serial <= 1;
+				serial_out <= "--";
+			end else
+			if (read_addr == 24'hFFB800) begin
+				// enable overlay
+				do_overlay <= 1;
+				do_serial <= 1;
+				serial_out <= "++";
+			end
+*/
 		end
 	end
+
 
 	reg fifo_read_strobe;
 	wire fifo_available;
@@ -201,11 +213,10 @@ module top(
 	fifo_spram_16to8 buffer(
 		.clk(clk_48),
 		.reset(reset),
-		.write_data( newline ? "\r\n" : {
-			hexdigit(spi_rx_data[7:4]),
-			hexdigit(spi_rx_data[3:0])
-		}),
-		.write_strobe(spi_ready),
+		.write_data(do_hex
+		  ? { hexdigit(spi_rx_data[7:4]), hexdigit(spi_rx_data[3:0]) }
+		  : serial_out),
+		.write_strobe(do_serial) ,
 		.data_available(fifo_available),
 		.read_data(uart_txd),
 		.read_strobe(fifo_read_strobe)
@@ -219,7 +230,7 @@ module top(
 		// single port fifo can't read/write the same cycle
 		if (fifo_available
 		&&  uart_txd_ready
-		&& !spi_ready
+		&& !do_serial
 		&& !uart_txd_strobe
 		) begin
 			fifo_read_strobe <= 1;
