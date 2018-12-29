@@ -32,7 +32,7 @@ module top(
 	assign spi_cs = 1; // it is necessary to turn off the SPI flash chip
 
 	// map the sensor
-	parameter NUM_SENSORS = 4;
+	parameter NUM_SENSORS = 16;
 	wire [15:0] lighthouse_pin = {
 		gpio_48,
 		gpio_3,
@@ -64,13 +64,15 @@ module top(
 		.CLKHF(clk_48)
 	);
 
+/*
 	// pulse the green LED to know that we're alive
-	reg [31:0] counter;
+	reg [25:0] counter;
 	always @(posedge clk_48)
 		counter <= counter + 1;
 	wire pwm_g;
 	pwm pwm_g_driver(clk_48, 1, pwm_g);
 	assign led_g = !(counter[25:23] == 0 && pwm_g);
+*/
 
 	assign led_b = serial_rxd; // idles high
 
@@ -124,59 +126,48 @@ module top(
 		.read_strobe(fifo_read_strobe)
 	);
 
-	parameter ANGLE_BITS = 16;
-	wire [ANGLE_BITS-1:0] angle [0:NUM_SENSORS-1];
-	wire [NUM_SENSORS-1:0] axis;
-	wire [NUM_SENSORS-1:0] lighthouse;
-	wire [NUM_SENSORS-1:0] strobe;
-	wire [NUM_SENSORS-1:0] data;
-
-	genvar x;
-	for(x = 0 ; x < NUM_SENSORS ; x = x+1)
-	begin : sensors
-		lighthouse_sensor #(.ANGLE_BITS(ANGLE_BITS)) lh(
-			.clk(clk_48),
-			.reset(reset),
-			.raw_pin(lighthouse_pin[x]),
-			.strobe(strobe[x]),
-			.angle(angle[x]),
-			.axis(axis[x]),
-			.data(data[x]),
-			.lighthouse(lighthouse[x])
-		);
-	end
-
-	// select which sensor has the newest reading
+	wire angle_strobe;
+	wire lighthouse;
+	wire axis;
 	wire [3:0] sensor;
-	wire new_sample;
+	wire [19:0] angle;
 
-	integer i;
-	always @(*)
-	begin
-		new_sample <= 0;
-		for(i = 0 ; i < NUM_SENSORS ; i++)
-		begin
-			if (strobe[i]) begin
-				sensor <= i;
-				new_sample <= 1;
-			end
-		end
-	end
+	wire data_strobe;
+	wire data_out;
+	reg data;
+
+	lighthouse_sensor #(.SENSORS(NUM_SENSORS)) lh(
+		.clk(clk_48),
+		.reset(reset),
+		.raw_pins(lighthouse_pin),
+
+		.angle_strobe(angle_strobe),
+		.sensor(sensor),
+		.lighthouse(lighthouse),
+		.axis(axis),
+		.angle(angle),
+
+		.data_strobe(data_strobe),
+		.data(data_out)
+	);
 
 	always @(posedge clk_48)
 	begin
 		fifo_write_strobe <= 0;
 
-		if (new_sample) begin
+		if (data_strobe)
+			data <= data_out;
+
+		if (angle_strobe) begin
 			fifo_write_strobe <= 1;
 			fifo_write <= {
 				4'hA + sensor,
 				2'b0,
-				lighthouse[sensor],
-				axis[sensor],
+				lighthouse,
+				axis,
 				3'b0,
-				data[sensor],
-				angle[sensor]
+				data,
+				angle
 			};
 		end
 	end

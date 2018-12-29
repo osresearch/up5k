@@ -32,75 +32,173 @@ _____   ________       ___       _____________   ___________
 module lighthouse_sensor(
 	input clk,
 	input reset,
-	input raw_pin,
-	output strobe,
+	input [SENSORS-1:0] raw_pins,
+	output angle_strobe,
 	output [ANGLE_BITS-1:0] angle,
-	output lighthouse,
-	output axis,
-	output data,
+	output [SENSOR_BITS-1:0] sensor,
+	output reg lighthouse,
+	output reg axis,
+	output data_strobe,
+	output data
 );
+	parameter SENSORS = 1;
+	parameter SENSOR_BITS = `CLOG2(SENSORS);
 	parameter WIDTH = 20;
 	parameter MHZ = 48;
+	parameter MAX_COUNTER = 20'h80000;
 	parameter ANGLE_BITS = 20;
 
-	wire sweep_strobe;
-	wire [10:0] sync0;
-	wire [10:0] sync1;
-	wire [20-1:0] sweep;
+	// clock shared between all of the sensors
+	reg [WIDTH-1:0] counter;
+	reg [WIDTH-1:0] fall_counter;
+	reg [WIDTH-1:0] rise_counter;
 
-	wire [1:0] skip;
-	wire [1:0] valid;
-	wire [1:0] axis_raw;
-	wire [1:0] data_raw;
+	// the pulse length encodes information about the lighthouse
+	// and laser being used
+	wire skip_raw;
+	wire data_raw;
+	wire axis_raw;
+	wire sync_valid;
+	lighthouse_sync_decode #(.MHZ(MHZ)) sync_decode(
+		counter[WIDTH-1:9], skip_raw, data_raw, axis_raw, sync_valid);
 
-	lighthouse_sweep #(
-		.WIDTH(WIDTH),
-		.MHZ(MHZ)
-	) lh_sweep(
-		.clk(clk),
-		.reset(reset),
-		.raw_pin(raw_pin),
-		.skip(skip),
-		.valid(valid),
-		.axis(axis_raw),
-		.data(data_raw),
-		.sweep(sweep),
-		.sweep_strobe(sweep_strobe)
-	);
+	// logical AND all of the raw input pins so that
+	// any falling edge will be clocked
+	reg all_sync;
+	reg all_prev;
+	wire all_rise = all_sync && !all_prev;
+	wire all_fall = !all_sync && all_prev;
 
+	// buffer all of the pins with edge capture strobes
+	reg [SENSORS-1:0] rise_strobe;
+	reg [SENSORS-1:0] fall_strobe;
 
+	genvar x;
+	for(x=0 ; x < SENSORS ; x = x + 1)
+		edge_capture sensors_edge(
+			.clk(clk),
+			.reset(reset),
+			.raw_pin(raw_pins[x]),
+			.rise_strobe(rise_strobe[x]), 
+			.fall_strobe(fall_strobe[x])
+		);
+
+	// track the rising and falling edge of the entire input array
+	// for detecting the sync pulses.
+	// detects if the counter has gone too long, in which case falling
+	// edge restarts the counter
+	localparam WAIT_SYNC0_START	= 0;
+	localparam WAIT_SYNC0_END	= 1;
+	localparam WAIT_SYNC1_START	= 2;
+	localparam WAIT_SYNC1_END	= 3;
+	localparam WAIT_SENSORS		= 4;
+	reg [5:0] state;
 	always @(posedge clk)
 	begin
-		strobe <= 0;
+		// default is no data bit strobe
+		data_strobe <= 0;
 
-		if (reset || !valid[0] || !valid[1]) begin
-			// nothing; ignore any pulses
+		// buffer the big AND gate
+		all_prev <= all_sync;
+		all_sync <= &raw_pins;
+
+		// default is always increment counter
+		counter <= counter + 1;
+
+		if (reset) begin
+			counter <= 0;
+			state <= WAIT_SYNC0_START;
 		end else
-		if (sweep_strobe) begin
-			// ensure that only one was flagged as skipped
-			if (skip[0] != skip[1])
-				strobe <= 1;
-
-			// convert the 20-bit sweep timer into the desired
-			// precision for the output angle
-			angle <= sweep[19:20 - ANGLE_BITS];
-
-			// determine which lighthouse sent the sweep
-			// (the one that was not skipped)
-			if (!skip[0]) begin
-				lighthouse <= 0;
-				axis <= axis_raw[0];
-				data <= data_raw[0];
+		if (counter > MAX_COUNTER) begin
+			// if we've timed out, reset the FSM
+			state <= WAIT_SYNC0_START;
+		end else
+		case (state)
+		WAIT_SYNC0_START: if (all_fall) begin
+			// very first sync bit, restart the counter
+			counter <= 0;
+			state <= WAIT_SYNC0_END;
+		end
+		WAIT_SYNC0_END: if (all_rise) begin
+			// end of the first sync bit
+			// if the length is reasonable, record it and
+			// move to the next state
+			if (!sync_valid) begin
+				state <= WAIT_SYNC0_START;
 			end else begin
-				lighthouse <= 1;
-				axis <= axis_raw[1];
-				data <= data_raw[1];
+				state <= WAIT_SYNC1_START;
+				if (!skip_raw) begin
+					// this is the valid output
+					data <= data_raw;
+					axis <= axis_raw;
+					lighthouse <= 0;
+					data_strobe <= 1;
+				end
+			end
+		end
+		WAIT_SYNC1_START: if (all_fall) begin
+			// start of the second sync bit
+			state <= WAIT_SYNC1_END;
+			counter <= 0;
+		end
+		WAIT_SYNC1_END: if (all_rise) begin
+			// end of the second sync bit
+			if (!sync_valid) begin
+				state <= WAIT_SYNC0_START;
+			end else begin
+				state <= WAIT_SENSORS;
+				counter <= 0;
+
+				if (!skip_raw) begin
+					data <= data_raw;
+					axis <= axis_raw;
+					lighthouse <= 1;
+					data_strobe <= 1;
+				end
+			end
+		end
+		WAIT_SENSORS: begin
+			// do nothing, timeout will eventually happen
+		end
+		default: begin
+			// should never happen
+			state <= WAIT_SYNC0_START;
+		end
+		endcase
+	end
+
+	// select which sensor has the newest reading
+	wire [SENSOR_BITS-1:0] sensor;
+	wire new_sample;
+
+	integer i;
+	always @(*)
+	begin
+		new_sample <= 0;
+		for(i = 0 ; i < SENSORS ; i++)
+		begin
+			if (fall_strobe[i]) begin
+				sensor <= i;
+				new_sample <= 1;
 			end
 		end
 	end
 
-endmodule
+	// find the first sensors with a low pin
+	always @(posedge clk)
+	begin
+		angle_strobe <= 0;
 
+		if (reset) begin
+			// nothing to do
+		end else
+		if (state == WAIT_SENSORS && new_sample) begin
+			// there has been a falling edge of a sensor
+			angle_strobe <= 1;
+			angle <= counter;
+		end
+	end
+endmodule
 
 module lighthouse_sync_decode(
 	input [10:0] sync,
@@ -117,106 +215,6 @@ module lighthouse_sync_decode(
 	assign skip = type[2];
 	assign data = type[1];
 	assign axis = type[0];
-endmodule
-
-
-module lighthouse_sweep(
-	input clk,
-	input reset,
-	input raw_pin,
-	output reg [1:0] axis,
-	output reg [1:0] skip,
-	output reg [1:0] data,
-	output reg [1:0] valid,
-	output reg [WIDTH-1:0] sweep,
-	output sweep_strobe
-);
-	parameter WIDTH = 24;
-	parameter MHZ = 48;
-
-	wire rise_strobe;
-	wire fall_strobe;
-	reg [WIDTH-1:0] counter;
-	reg [WIDTH-1:0] last_rise;
-	reg [WIDTH-1:0] last_fall;
-	reg got_sweep;
-	reg got_sync1;
-
-	// time low
-	wire [WIDTH-1:0] len = counter - last_fall;
-	wire [WIDTH-1:0] duty = counter - last_rise;
-
-	// decode the sync pulse, ignoring the bottom 9 bits
-	wire skip_raw;
-	wire data_raw;
-	wire axis_raw;
-	wire valid_raw;
-	lighthouse_sync_decode #(.MHZ(MHZ)) sync_decode(
-		len[WIDTH-1:9], skip_raw, data_raw, axis_raw, valid_raw);
-
-	edge_capture edge(
-		.clk(clk),
-		.reset(reset),
-		.raw_pin(raw_pin),
-		.rise_strobe(rise_strobe),
-		.fall_strobe(fall_strobe)
-	);
-
-	always @(posedge clk)
-	begin
-		sweep_strobe <= 0;
-		counter <= counter + 1;
-
-		if (reset)
-		begin
-			counter <= 0;
-			last_fall <= 0;
-			last_rise <= 0;
-			got_sweep <= 0;
-			got_sync1 <= 0;
-		end else
-		if (fall_strobe)
-		begin
-			// record the time of the falling strobe
-			last_fall <= counter;
-		end else
-		if (rise_strobe)
-		begin
-			if (len < 15 * MHZ) begin
-				// signal that we have something
-				// if we've seen the sync pulses
-				if (got_sync1)
-					sweep_strobe <= 1;
-
-				// time is from the last rising edge to
-				// the midpoint of the sweep pulse
-				sweep <= counter - len/2 - last_rise;
-
-				// indicate that we have a sweep
-				got_sweep <= 1;
-				got_sync1 <= 0;
-			end else
-			if (got_sweep) begin
-				// first non-sweep pulse after a sweep
-				axis[0] <= axis_raw;
-				data[0] <= data_raw;
-				skip[0] <= skip_raw;
-				valid[0] <= valid_raw;
-				got_sweep <= 0;
-				got_sync1 <= 0;
-			end else begin
-				// second non-sweep pulse
-				axis[1] <= axis_raw;
-				data[1] <= data_raw;
-				skip[1] <= skip_raw;
-				valid[1] <= valid_raw;
-				got_sync1 <= 1;
-			end
-
-			last_rise <= counter;
-		end
-	end
-
 endmodule
 
 
