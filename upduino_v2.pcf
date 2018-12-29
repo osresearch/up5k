@@ -26,6 +26,7 @@ set_io gpio_48 48
 set_io gpio_3 3
 set_io gpio_4 4
 set_io gpio_44 44
+set_io gpio_43 43
 
 set_io gpio_6 6
 set_io gpio_42 42
