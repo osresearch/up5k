@@ -1,8 +1,8 @@
 #
 # Upduino v2
 #
-DEVICE ?= 5k
-FOOTPRNT ?= sg48
+DEVICE ?= up5k
+FOOTPRINT ?= sg48
 PIN_SRC ?= upduino_v2.pcf
 ICEPATH ?=
 PNR ?= $(ICEPATH)nextpnr-ice40
@@ -26,8 +26,8 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 
 %.asc: $(PIN_SRC) %.json
 	$(PNR) \
-		--up5k \
-		--package $(FOOTPRNT) \
+		--$(DEVICE) \
+		--package $(FOOTPRINT) \
 		--asc $@ \
 		--pcf $(PIN_SRC) \
 		--json $(basename $@).json \
