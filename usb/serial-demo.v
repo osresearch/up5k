@@ -84,11 +84,10 @@ module top (
   reg [7:0] uart_tx_data;
   reg uart_tx_strobe;
 
-  reg uart_rx_strobe;
+  wire uart_rx_strobe;
   wire [7:0] uart_rx_data;
-  wire uart_rx_ready;
 
-  reg [20:0] counter = 1;
+  reg [19:0] counter = 1;
 initial pin_led <= 0;
   reg [4:0] out;
   wire host_presence;
@@ -109,14 +108,13 @@ initial pin_led <= 0;
 
   always @(posedge clk) if (active) begin
 	uart_tx_strobe <= 0;
-	uart_rx_strobe <= 0;
 	uart_strobe <= 0;
 
 	counter <= counter + 1;
 
 	if (uart_tx_ready
 	&& !uart_tx_strobe
-	&&  counter == 0
+	//&&  counter == 0
 	) begin
 		uart_data <= "A" + out[4:0];
 		uart_tx_data <= "A" + out[4:0];
@@ -127,9 +125,8 @@ initial pin_led <= 0;
 		uart_strobe <= 1;
 	end
 
-	if (uart_rx_ready) begin
+	if (uart_rx_strobe) begin
 		pin_led <= 1;
-		uart_rx_strobe <= 1;
 		uart_data <= uart_rx_data;
 		if (!uart_strobe)
 			uart_strobe <= 1;
@@ -144,7 +141,6 @@ initial pin_led <= 0;
     .uart_tx_ready(uart_tx_ready),
     .uart_tx_strobe(uart_tx_strobe),
     .uart_tx_data(uart_tx_data),
-    .uart_rx_ready(uart_rx_ready),
     .uart_rx_strobe(uart_rx_strobe),
     .uart_rx_data(uart_rx_data),
     .usb_p_tx(usb_p_tx),

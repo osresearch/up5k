@@ -1,6 +1,6 @@
 `include "usb_fs_pe.v"
 `include "usb_serial_ctrl_ep.v"
-`include "usb_spi_bridge_ep.v"
+`include "usb_serial_ep.v"
 
 module usb_serial (
   input  clk_48mhz,
@@ -24,8 +24,7 @@ module usb_serial (
   input uart_tx_strobe,
 
   output [7:0] uart_rx_data,
-  output uart_rx_ready,
-  input uart_rx_strobe,
+  output uart_rx_strobe,
 
   output host_presence // need to figure this out
 );
@@ -61,7 +60,7 @@ module usb_serial (
   wire serial_in_ep_grant;
   wire serial_in_ep_data_free;
   wire serial_in_ep_data_put;
-  reg [7:0] serial_in_ep_data;
+  wire [7:0] serial_in_ep_data;
   wire serial_in_ep_data_done;
   wire serial_in_ep_stall;
   wire serial_in_ep_acked;
@@ -69,7 +68,7 @@ module usb_serial (
   wire sof_valid;
   wire [10:0] frame_index;
 
-`define SERIAL
+`undef SERIAL
 `ifdef SERIAL
   // signal if we have data available
   // note that the "in" and "out" are from the HOST perspective,
@@ -127,7 +126,7 @@ module usb_serial (
   end
 `else
 
-  usb_spi_bridge_ep usb_spi_bridge_ep_inst (
+  usb_serial_ep usb_serial_ep_inst (
     .clk(clk),
     .reset(reset),
 
@@ -151,14 +150,12 @@ module usb_serial (
     .in_ep_stall(serial_in_ep_stall),
     .in_ep_acked(serial_in_ep_acked),
 
-    // spi interface 
-    .spi_cs_b(spi_cs),
-    .spi_sck(spi_sck),
-    .spi_mosi(spi_mosi),
-    .spi_miso(spi_miso),
-
-    // warm boot interface
-    .boot_to_user_design(boot_to_user_design)
+    // uart interface
+    .uart_tx_ready(uart_tx_ready),
+    .uart_tx_data(uart_tx_data),
+    .uart_tx_strobe(uart_tx_strobe),
+    .uart_rx_data(uart_rx_data),
+    .uart_rx_strobe(uart_rx_strobe)
   );
 `endif
 
