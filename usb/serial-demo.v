@@ -87,7 +87,7 @@ module top (
   wire uart_rx_strobe;
   wire [7:0] uart_rx_data;
 
-  reg [19:0] counter = 1;
+  reg [21:0] counter = 1;
 initial pin_led <= 0;
   reg [4:0] out;
   wire host_presence;
@@ -106,19 +106,49 @@ initial pin_led <= 0;
 	end
   end
 
+  wire fifo_data_available;
+  reg [7:0] fifo_tx_data;
+  reg fifo_tx_strobe;
+  wire [7:0] fifo_rx_data;
+  reg fifo_rx_strobe;
+  
+  fifo tx_buffer(
+	.clk(clk),
+	.reset(reset),
+	.data_available(fifo_data_available),
+	.write_data(fifo_tx_data),
+	.write_strobe(fifo_tx_strobe),
+	.read_data(fifo_rx_data),
+	.read_strobe(fifo_rx_strobe)
+  );
+
+  always @(posedge clk) if (!reset) begin
+	if (uart_tx_ready
+	&& fifo_data_available
+	&& !uart_tx_strobe
+	) begin
+		uart_tx_data <= fifo_rx_data;
+		uart_tx_strobe <= 1;
+		fifo_rx_strobe <= 1;
+	end else begin
+		uart_tx_strobe <= 0;
+		fifo_rx_strobe <= 0;
+	end
+  end
+
   always @(posedge clk) if (active) begin
-	uart_tx_strobe <= 0;
+	fifo_tx_strobe <= 0;
 	uart_strobe <= 0;
 
 	counter <= counter + 1;
 
 	if (uart_tx_ready
 	&& !uart_tx_strobe
-	//&&  counter == 0
+	&&  counter == 0
 	) begin
 		uart_data <= "A" + out[4:0];
-		uart_tx_data <= "A" + out[4:0];
-		uart_tx_strobe <= 1;
+		fifo_tx_data <= "A" + out[4:0];
+		fifo_tx_strobe <= 1;
 		out <= out + 1;
 		pin_led <= !pin_led;
 
@@ -128,10 +158,15 @@ initial pin_led <= 0;
 	if (uart_rx_strobe) begin
 		pin_led <= 1;
 		uart_data <= uart_rx_data;
+		fifo_tx_data <= uart_rx_data;
+		fifo_tx_strobe <= 1;
+
 		if (!uart_strobe)
 			uart_strobe <= 1;
 	end
   end
+
+
 
   usb_serial serial(
     .clk_48mhz(clk_48mhz),

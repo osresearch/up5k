@@ -53,18 +53,21 @@ module usb_serial_ep (
   // and "out" data available.
   // FPGA will always request data when it is available from the host
   // and always signals that it has read it.
-  wire out_data_ready = out_ep_grant && out_ep_data_avail; 
+  wire out_data_ready = out_ep_grant && out_ep_data_avail;
   assign out_ep_req = out_ep_data_avail;
-  assign out_ep_data_get = out_data_ready; // always ready
+  assign out_ep_data_get = out_ep_grant; // always ready
 
+  reg out_data_valid;
   reg uart_rx_ready;
   reg [7:0] uart_rx_data;
+
   always @(posedge clk) begin
-	if (out_data_ready) begin
+	uart_rx_strobe <= 0;
+	out_data_valid <= out_data_ready;
+
+	if (out_data_valid) begin
 		uart_rx_data <= out_ep_data;
 		uart_rx_strobe <= 1;
-	end else begin
-		uart_rx_strobe <= 0;
 	end
   end
   
