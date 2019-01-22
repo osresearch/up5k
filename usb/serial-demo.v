@@ -19,6 +19,7 @@ module top (
   wire lock;
   wire reset = !lock;
 
+`ifdef TINYFPGA
   SB_PLL40_CORE #(
     .DIVR(4'b0000),
     .DIVF(7'b0101111),
@@ -45,7 +46,19 @@ module top (
     .SDI(),
     .SDO(),
     .SCLK()
+`define TOMU
   );
+`endif
+
+`define TOMU
+`ifdef TOMU
+	assign lock = 1;
+	SB_HFOSC u_hfosc (
+		.CLKHFPU(1'b1),
+		.CLKHFEN(1'b1),
+		.CLKHF(clk_48mhz)
+	);
+`endif
 
 	reg clk_24mhz;
 	reg clk_12mhz;
@@ -62,7 +75,6 @@ module top (
 	reg [7:0] uart_data;
 	reg uart_strobe;
 	wire clk_1;
-  assign pin_9 = clk_1;
 	divide_by_n #(.N(16)) div1(clk_48mhz, reset, clk_1);
 	uart_tx uart(
 		.mclk(clk),
@@ -141,6 +153,7 @@ initial pin_led <= 0;
 	uart_strobe <= 0;
 
 	counter <= counter + 1;
+	pin_9 <= counter[21];
 
 	if (uart_tx_ready
 	&& !uart_tx_strobe
