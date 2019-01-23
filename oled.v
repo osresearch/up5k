@@ -19,6 +19,15 @@
  * 14 DB7
  * 15 NC (button?)
  * 16 NC (button?)
+ *
+ * Write mode timing should be fine for a 6 Mhz clock:
+ *
+ * Tc	Enable Cycle Time (E) 1200 ns (0.8 mhz)
+ * Tpw 	Enable Pulse Width (E) 140 ns (7 mhz)
+ * Tas	Address setup time RS/RW/E 0ns
+ * Tah	Address hold times RS/RW/E 10 ns (100 mhz)
+ * Tdsw	Data setup time DB0-DB8 40 ns (50 mhz)
+ * Th	Data hold time DB0-DB7 10 ns (100 mhz)
  */
 module top(
 	input pin_clk,
@@ -37,7 +46,7 @@ module top(
 	inout  pin_11 // db7
 );
 	wire clk_48mhz, locked;
-	wire reset = !locked;
+	wire reset;
 	pll pll_inst(pin_clk, clk_48mhz, locked);
 
 	// generate a 2 MHz clock from the 16 MHz input
@@ -52,6 +61,18 @@ module top(
 	always @(posedge clk_500khz) clk_250khz = !clk_250khz;
 	always @(posedge clk_250khz) clk_100khz = !clk_100khz;
 	wire clk = clk_3mhz;
+
+	reg [15:0] reset_counter;
+	always @(posedge clk) begin
+		if (!locked) begin
+			reset <= 1;
+			reset_counter <= 0;
+		end else
+		if (&reset_counter) begin
+			reset <= 0;
+		end else
+			reset_counter <= reset_counter + 1;
+	end
 /*
 	wire clk;
 	divide_by_n #(.N(64)) div(clk_48mhz, reset, clk);
@@ -90,32 +111,42 @@ module top(
 	);
 
 	reg [3:0] counter;
-	reg [4:0] out;
 
 	localparam INIT0 = 0;
 	localparam INIT1 = 1;
 	localparam INIT2 = 2;
 	localparam INIT3 = 3;
 	localparam INIT4 = 4;
-	localparam DRAW = 5;
-	localparam DRAW2 = 6;
+	localparam INIT5 = 5;
+	localparam DRAW_X = 6;
+	localparam DRAW_Y = 7;
+	localparam DRAW_BITS = 8;
+
 	reg [3:0] state = INIT0;
 
                            //0123456789abcdef0123456789abcdef
-	reg [32*8-1:0] message = "TinyFPGA-BX            OLED 16x2";
+	reg [64*8-1:0] message = "TinyFPGA-BX      pwm   OLED 16x2TinyFPGA-BX            OLED 16x2";
+
+	reg [15:0] bitmap[240:0];
+	reg [7:0] col;
+	reg row;
+	wire [15:0] pixels = bitmap[col];
+	initial $readmemh("bitmap.hex", bitmap);
 
 	always @(posedge clk)
 	begin
-		if (reset)
-			state <= INIT0;
-		else begin
-
-		if (oled_ready)
-			counter <= counter + 1;
-
 		oled_strobe <= 0;
 
-		if (oled_ready)
+		if (reset)
+		begin
+			state <= INIT0;
+			col <= 0;
+			row <= 0;
+		end else
+		if (oled_ready && !oled_strobe)
+		begin
+			counter <= counter + 1;
+
 		case (state)
 		INIT0: begin
 			pin_led <= 1;
@@ -133,40 +164,26 @@ module top(
 			state <= INIT1;
 		end
 		INIT1: begin
-			// power off
+			// display on/off control
 			oled_cmd <= {
 				1'b0, // rs
-				4'b0001,
-				1'b1, // character mode
-				1'b1, // power off mode
-				1'b1, // 
-				1'b1  //
+				5'b00001,
+				1'b1, // entire display on
+				1'b0, // no cursor
+				1'b0  // no blink
 			};
 			oled_wait <= 1;
 			oled_strobe <= 1;
 			state <= INIT2;
 		end
 		INIT2: begin
-			// display on/off control
-			oled_cmd <= {
-				1'b0, // rs
-				5'b00001,
-				1'b1, // entire display on
-				1'b1, // no cursor
-				1'b0  // no blink
-			};
+			// display clear
+			oled_cmd <= 9'b000000001;
 			oled_wait <= 1;
 			oled_strobe <= 1;
 			state <= INIT3;
 		end
 		INIT3: begin
-			// display clear
-			oled_cmd <= 9'b000000001;
-			oled_wait <= 1;
-			oled_strobe <= 1;
-			state <= INIT4;
-		end
-		INIT4: begin
 			// entry mode set
 			oled_cmd <= {
 				1'b0, // rs
@@ -176,31 +193,75 @@ module top(
 			};
 			oled_wait <= 1;
 			oled_strobe <= 1;
-			state <= DRAW;
+			state <= INIT4;
 		end
-		DRAW: begin
-			// go to position
-			if (counter == 0)
-			begin
-			oled_cmd <= { 1'b0, 
-				8'h80
-				| (out[4] ? 8'h40 : 8'h00)
-				| out[3:0]
+		INIT4: begin
+			// power on
+			oled_cmd <= {
+				1'b0, // rs
+				4'b0001,
+				1'b0, // character mode
+				1'b1, // power on mode
+				1'b1, // 
+				1'b1  //
+			};
+			oled_wait <= 1;
+			oled_strobe <= 1;
+			state <= INIT5;
+		end
+		INIT5: begin
+			// enable graphics mode as the last thing
+			// before drawing (otherwise it won't "stick")
+			oled_cmd <= {
+				1'b0, // rs
+				4'b0001,
+				1'b1, // graphics mode
+				1'b1, // power on mode
+				1'b1, // 
+				1'b1  //
+			};
+			oled_wait <= 1;
+			oled_strobe <= 1;
+			state <= DRAW_Y;
+		end
+		DRAW_Y: begin
+			pin_led <= 1;
+			// Y position is controlled by CGRAM
+			oled_cmd <= {
+				1'b0,// register
+				6'b0100000,
+				row
 			};
 			oled_strobe <= 1;
 			oled_wait <= 1;
-			state <= DRAW2;
-			end
+			state <= DRAW_X;
 		end
-		DRAW2: begin
-			if (counter == 0)
-			begin
-			pin_led <= !pin_led;
-			oled_wait <= 1;
-			oled_cmd <= { 1'b1, message[31*8-out*8 +: 8] };
+		DRAW_X: begin
+			// X position is controlled by DDRAM
+			oled_cmd <= {
+				1'b0, // register
+				1'b1,
+				7'b0  // go back to the first column
+			};
 			oled_strobe <= 1;
-			state <= DRAW;
-			out <= out + 1;
+			oled_wait <= 1;
+			state <= DRAW_BITS;
+		end
+		DRAW_BITS: begin
+			pin_led <= 0;
+			oled_wait <= 0;
+			oled_cmd <= {
+				1'b1, // data
+				row ? pixels[15:8] : pixels[7:0]
+			};
+			oled_strobe <= 1;
+
+			if (col == 79) begin
+				row <= !row;
+				col <= 0;
+				state <= DRAW_Y;
+			end else begin
+				col <= col + 1;
 			end
 		end
 		endcase
@@ -229,6 +290,7 @@ module oled(
 	reg read;
 	reg enable;
 	reg rs;
+	reg ready;
 
 	assign read_pin = read;
 	assign enable_pin = enable;
@@ -249,18 +311,21 @@ module oled(
 	localparam IDLE = 0;
 	localparam SEND_CMD1 = 1;
 	localparam SEND_CMD2 = 2;
-	localparam SEND_CMD3 = 3;
 	localparam WAIT_BUSY = 4;
 	localparam WAIT_BUSY1 = 5;
 	localparam WAIT_BUSY2 = 6;
+	localparam WAIT_BUSY3 = 7;
 
-	reg [4:0] state = WAIT_BUSY;
-	assign ready = state == IDLE;
+	reg [3:0] state = WAIT_BUSY;
+	reg busy;
 
 	always @(posedge clk)
 	begin
+		busy <= db_in[7];
+
 		if (reset) begin
 			state <= WAIT_BUSY;
+			ready <= 0;
 		end else
 		case (state)
 		IDLE: begin
@@ -268,9 +333,11 @@ module oled(
 			rs <= 0;
 			read <= 1;
 			enable <= 0;
+			ready <= 1;
 
 			if (strobe) begin
 				// start a new write
+				ready <= 0;
 				read <= 0;
 				rs <= command[8];
 				db_out <= command[7:0];
@@ -278,7 +345,7 @@ module oled(
 			end
 		end
 		SEND_CMD1: begin
-			// rising edge one clock after the r/w transition
+			// data should be stable by now
 			enable <= 1;
 			state <= SEND_CMD2;
 		end
@@ -291,6 +358,7 @@ module oled(
 				state <= IDLE;
 		end
 		WAIT_BUSY: begin
+			// reset for a status read command
 			enable <= 0;
 			read <= 1;
 			rs <= 0;
@@ -301,11 +369,12 @@ module oled(
 			state <= WAIT_BUSY2;
 		end
 		WAIT_BUSY2: begin
+			enable <= 0;
+			state <= WAIT_BUSY1;
+
+			// if the LCD signals no longer busy, we're done
 			if (!db_in[7])
 				state <= IDLE;
-			else
-				state <= WAIT_BUSY1;
-			enable <= 0;
 		end
 		endcase
 	end
