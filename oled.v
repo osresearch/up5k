@@ -89,8 +89,8 @@ module top(
 		.wait_for_busy(oled_wait)
 	);
 
-	reg [7:0] counter;
-	reg [7:0] out;
+	reg [3:0] counter;
+	reg [4:0] out;
 
 	localparam INIT0 = 0;
 	localparam INIT1 = 1;
@@ -100,6 +100,9 @@ module top(
 	localparam DRAW = 5;
 	localparam DRAW2 = 6;
 	reg [3:0] state = INIT0;
+
+                           //0123456789abcdef0123456789abcdef
+	reg [32*8-1:0] message = "TinyFPGA-BX            OLED 16x2";
 
 	always @(posedge clk)
 	begin
@@ -116,6 +119,7 @@ module top(
 		case (state)
 		INIT0: begin
 			pin_led <= 1;
+			// function set
 			oled_cmd <= {
 				1'b0, // rs
 				3'b001,
@@ -129,14 +133,14 @@ module top(
 			state <= INIT1;
 		end
 		INIT1: begin
-			// function set
+			// power off
 			oled_cmd <= {
 				1'b0, // rs
-				3'b001,
-				1'b1, // 8-bit data length
-				1'b1, // two lines
-				1'b0, // first font
-				2'b00 // font table 0
+				4'b0001,
+				1'b1, // character mode
+				1'b1, // power off mode
+				1'b1, // 
+				1'b1  //
 			};
 			oled_wait <= 1;
 			oled_strobe <= 1;
@@ -148,7 +152,7 @@ module top(
 				1'b0, // rs
 				5'b00001,
 				1'b1, // entire display on
-				1'b0, // no cursor
+				1'b1, // no cursor
 				1'b0  // no blink
 			};
 			oled_wait <= 1;
@@ -175,22 +179,29 @@ module top(
 			state <= DRAW;
 		end
 		DRAW: begin
-			//if (counter == 0)
+			// go to position
+			if (counter == 0)
 			begin
-				// go to home position
-				oled_cmd <= { 1'b0, 8'h02 };
-				oled_strobe <= 1;
-				oled_wait <= 1;
-				state <= DRAW2;
+			oled_cmd <= { 1'b0, 
+				8'h80
+				| (out[4] ? 8'h40 : 8'h00)
+				| out[3:0]
+			};
+			oled_strobe <= 1;
+			oled_wait <= 1;
+			state <= DRAW2;
 			end
 		end
 		DRAW2: begin
+			if (counter == 0)
+			begin
 			pin_led <= !pin_led;
 			oled_wait <= 1;
-			oled_cmd <= { 1'b1, "A" + out[3:0] };
+			oled_cmd <= { 1'b1, message[31*8-out*8 +: 8] };
 			oled_strobe <= 1;
+			state <= DRAW;
 			out <= out + 1;
-			state <= DRAW2;
+			end
 		end
 		endcase
 		end
