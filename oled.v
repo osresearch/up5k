@@ -60,7 +60,7 @@ module top(
 	always @(posedge clk_1mhz) clk_500khz = !clk_500khz;
 	always @(posedge clk_500khz) clk_250khz = !clk_250khz;
 	always @(posedge clk_250khz) clk_100khz = !clk_100khz;
-	wire clk = clk_3mhz;
+	wire clk = clk_24mhz;
 
 	reg [15:0] reset_counter;
 	always @(posedge clk) begin
@@ -110,8 +110,6 @@ module top(
 		.wait_for_busy(oled_wait)
 	);
 
-	reg [3:0] counter;
-
 	localparam INIT0 = 0;
 	localparam INIT1 = 1;
 	localparam INIT2 = 2;
@@ -130,7 +128,8 @@ module top(
 	reg [15:0] bitmap[240:0];
 	reg [7:0] col;
 	reg row;
-	wire [15:0] pixels = bitmap[col];
+	reg [7:0] frame;
+	wire [15:0] pixels = bitmap[col + frame];
 	initial $readmemh("bitmap.hex", bitmap);
 
 	always @(posedge clk)
@@ -142,11 +141,9 @@ module top(
 			state <= INIT0;
 			col <= 0;
 			row <= 0;
+			frame <= 0;
 		end else
 		if (oled_ready && !oled_strobe)
-		begin
-			counter <= counter + 1;
-
 		case (state)
 		INIT0: begin
 			pin_led <= 1;
@@ -233,7 +230,7 @@ module top(
 				row
 			};
 			oled_strobe <= 1;
-			oled_wait <= 1;
+			oled_wait <= 0;
 			state <= DRAW_X;
 		end
 		DRAW_X: begin
@@ -244,7 +241,7 @@ module top(
 				7'b0  // go back to the first column
 			};
 			oled_strobe <= 1;
-			oled_wait <= 1;
+			oled_wait <= 0;
 			state <= DRAW_BITS;
 		end
 		DRAW_BITS: begin
@@ -257,6 +254,16 @@ module top(
 			oled_strobe <= 1;
 
 			if (col == 79) begin
+				if (row == 1)
+				begin
+					if (frame == 0)
+						frame <= 80;
+					else
+					if (frame == 80)
+						frame <= 0;
+					else
+						frame <= 0;
+				end
 				row <= !row;
 				col <= 0;
 				state <= DRAW_Y;
@@ -265,7 +272,6 @@ module top(
 			end
 		end
 		endcase
-		end
 	end
 endmodule
 
@@ -290,7 +296,6 @@ module oled(
 	reg read;
 	reg enable;
 	reg rs;
-	reg ready;
 
 	assign read_pin = read;
 	assign enable_pin = enable;
@@ -317,15 +322,12 @@ module oled(
 	localparam WAIT_BUSY3 = 7;
 
 	reg [3:0] state = WAIT_BUSY;
-	reg busy;
+	assign ready = state == IDLE;
 
 	always @(posedge clk)
 	begin
-		busy <= db_in[7];
-
 		if (reset) begin
 			state <= WAIT_BUSY;
-			ready <= 0;
 		end else
 		case (state)
 		IDLE: begin
@@ -333,11 +335,9 @@ module oled(
 			rs <= 0;
 			read <= 1;
 			enable <= 0;
-			ready <= 1;
 
 			if (strobe) begin
 				// start a new write
-				ready <= 0;
 				read <= 0;
 				rs <= command[8];
 				db_out <= command[7:0];
