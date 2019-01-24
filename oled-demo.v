@@ -84,10 +84,10 @@ module top(
 
 	// verilog sucks
 	parameter ROWS = 80;
-	reg [31:0] bitmap[ROWS-1:0];
+	reg [15:0] bitmap[ROWS-1:0];
 	initial $readmemh("bitmap.hex", bitmap);
 
-	reg [8:0] rx_offset;
+	reg [7:0] rx_offset;
 	wire [7:0] row;
 
 	// read data from the serial port into the frame buffer
@@ -114,53 +114,12 @@ module top(
 		begin
 			pin_led <= !pin_led;;
 
-			// unpack into two planes
-			if (rx_offset[1:0] == 3)
-			begin
-				bitmap[rx_offset[8:2]][ 0] <= rx_data[0];
-				bitmap[rx_offset[8:2]][ 1] <= rx_data[2];
-				bitmap[rx_offset[8:2]][ 2] <= rx_data[4];
-				bitmap[rx_offset[8:2]][ 3] <= rx_data[6];
-				bitmap[rx_offset[8:2]][16] <= rx_data[1];
-				bitmap[rx_offset[8:2]][17] <= rx_data[3];
-				bitmap[rx_offset[8:2]][18] <= rx_data[5];
-				bitmap[rx_offset[8:2]][19] <= rx_data[7];
-			end else
-			if (rx_offset[1:0] == 2)
-			begin
-				bitmap[rx_offset[8:2]][ 4] <= rx_data[0];
-				bitmap[rx_offset[8:2]][ 5] <= rx_data[2];
-				bitmap[rx_offset[8:2]][ 6] <= rx_data[4];
-				bitmap[rx_offset[8:2]][ 7] <= rx_data[6];
-				bitmap[rx_offset[8:2]][20] <= rx_data[1];
-				bitmap[rx_offset[8:2]][21] <= rx_data[3];
-				bitmap[rx_offset[8:2]][22] <= rx_data[5];
-				bitmap[rx_offset[8:2]][23] <= rx_data[7];
-			end else
-			if (rx_offset[1:0] == 1)
-			begin
-				bitmap[rx_offset[8:2]][ 8] <= rx_data[0];
-				bitmap[rx_offset[8:2]][ 9] <= rx_data[2];
-				bitmap[rx_offset[8:2]][10] <= rx_data[4];
-				bitmap[rx_offset[8:2]][11] <= rx_data[6];
-				bitmap[rx_offset[8:2]][24] <= rx_data[1];
-				bitmap[rx_offset[8:2]][25] <= rx_data[3];
-				bitmap[rx_offset[8:2]][26] <= rx_data[5];
-				bitmap[rx_offset[8:2]][27] <= rx_data[7];
-			end else
-			if (rx_offset[1:0] == 0)
-			begin
-				bitmap[rx_offset[8:2]][12] <= rx_data[0];
-				bitmap[rx_offset[8:2]][13] <= rx_data[2];
-				bitmap[rx_offset[8:2]][14] <= rx_data[4];
-				bitmap[rx_offset[8:2]][15] <= rx_data[6];
-				bitmap[rx_offset[8:2]][28] <= rx_data[1];
-				bitmap[rx_offset[8:2]][29] <= rx_data[3];
-				bitmap[rx_offset[8:2]][30] <= rx_data[5];
-				bitmap[rx_offset[8:2]][31] <= rx_data[7];
-			end
+			if (rx_offset[0])
+				bitmap[rx_offset[7:1]][7:0] <= rx_data;
+			else
+				bitmap[rx_offset[7:1]][15:8] <= rx_data;
 
-			if (rx_offset == 4*ROWS-1)
+			if (rx_offset == 2*ROWS-1)
 				rx_offset <= 0;
 			else
 				rx_offset <= rx_offset + 1;
