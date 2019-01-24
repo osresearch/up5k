@@ -42,7 +42,7 @@ module oled_graphics(
 	output rs_pin,
 
 	output [7:0] row,
-	input [15:0] pixels
+	input [31:0] pixels
 );
 	parameter ROWS = 80;
 
@@ -80,7 +80,7 @@ module oled_graphics(
 
 	reg [3:0] state = INIT0;
 
-	reg col;
+	reg [1:0] col;
 
 	always @(posedge clk)
 	begin
@@ -174,7 +174,7 @@ module oled_graphics(
 			oled_cmd <= {
 				1'b0,// register
 				6'b0100000,
-				col
+				col[0]
 			};
 			oled_strobe <= 1;
 			oled_wait <= 0;
@@ -195,12 +195,12 @@ module oled_graphics(
 			oled_wait <= 0;
 			oled_cmd <= {
 				1'b1, // data
-				col ? pixels[8:15] : pixels[0:7]
+				pixels[8*col +: 8]
 			};
 			oled_strobe <= 1;
 
 			if (row == ROWS-1) begin
-				col <= !col;
+				col <= col + 1;
 				row <= 0;
 				state <= DRAW_Y;
 			end else begin
