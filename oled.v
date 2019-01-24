@@ -1,4 +1,5 @@
-`include "util.v"
+`ifndef oled_v
+`define oled_v
 
 /*
  * Connect a WEH001602A OLED Character 16x2 to the TinyFPGA
@@ -29,54 +30,21 @@
  * Tdsw	Data setup time DB0-DB8 40 ns (50 mhz)
  * Th	Data hold time DB0-DB7 10 ns (100 mhz)
  */
-module top(
-	input pin_clk,
-	output pin_led,
 
-	output pin_1, // rs
-	output pin_2, // r
-	output pin_3, // e
-	inout  pin_4, // db0
-	inout  pin_5, // db1
-	inout  pin_6, // db2
-	inout  pin_7, // db3
-	inout  pin_8, // db4
-	inout  pin_9, // db5
-	inout  pin_10, // db6
-	inout  pin_11 // db7
+module oled_graphics(
+	input clk,
+	input reset,
+	
+	// physical connection
+	inout [7:0] db_pins,
+	output read_pin,
+	output enable_pin,
+	output rs_pin,
+
+	output [7:0] row,
+	input [15:0] pixels
 );
-	wire clk_48mhz, locked;
-	wire reset;
-	pll pll_inst(pin_clk, clk_48mhz, locked);
-
-	// generate a 2 MHz clock from the 16 MHz input
-	wire clk_24mhz, clk_12mhz, clk_6mhz, clk_3mhz, clk_1mhz;
-	wire clk_500khz, clk_250khz, clk_100khz;
-	always @(posedge clk_48mhz) clk_24mhz = !clk_24mhz;
-	always @(posedge clk_24mhz) clk_12mhz = !clk_12mhz;
-	always @(posedge clk_12mhz) clk_6mhz = !clk_6mhz;
-	always @(posedge clk_6mhz) clk_3mhz = !clk_3mhz;
-	always @(posedge clk_3mhz) clk_1mhz = !clk_1mhz;
-	always @(posedge clk_1mhz) clk_500khz = !clk_500khz;
-	always @(posedge clk_500khz) clk_250khz = !clk_250khz;
-	always @(posedge clk_250khz) clk_100khz = !clk_100khz;
-	wire clk = clk_24mhz;
-
-	reg [15:0] reset_counter;
-	always @(posedge clk) begin
-		if (!locked) begin
-			reset <= 1;
-			reset_counter <= 0;
-		end else
-		if (&reset_counter) begin
-			reset <= 0;
-		end else
-			reset_counter <= reset_counter + 1;
-	end
-/*
-	wire clk;
-	divide_by_n #(.N(64)) div(clk_48mhz, reset, clk);
-*/
+	parameter ROWS = 80;
 
 	wire oled_ready;
 	reg [8:0] oled_cmd;
@@ -86,22 +54,12 @@ module top(
 	oled oled_inst(
 		.clk(clk),
 		.reset(reset),
-		//.debug(pin_led),
 
 		// physical connection
-		.rs_pin(pin_1),
-		.read_pin(pin_2),
-		.enable_pin(pin_3),
-		.db_pins({
-			pin_11,
-			pin_10, 
-			pin_9,
-			pin_8,
-			pin_7,
-			pin_6,
-			pin_5,
-			pin_4
-		}),
+		.rs_pin(rs_pin),
+		.read_pin(read_pin),
+		.enable_pin(enable_pin),
+		.db_pins(db_pins),
 
 		// commands
 		.ready(oled_ready),
@@ -122,15 +80,7 @@ module top(
 
 	reg [3:0] state = INIT0;
 
-                           //0123456789abcdef0123456789abcdef
-	reg [64*8-1:0] message = "TinyFPGA-BX      pwm   OLED 16x2TinyFPGA-BX            OLED 16x2";
-
-	reg [15:0] bitmap[240:0];
-	reg [7:0] col;
-	reg row;
-	reg [7:0] frame;
-	wire [15:0] pixels = bitmap[col + frame];
-	initial $readmemh("bitmap.hex", bitmap);
+	reg col;
 
 	always @(posedge clk)
 	begin
@@ -141,12 +91,10 @@ module top(
 			state <= INIT0;
 			col <= 0;
 			row <= 0;
-			frame <= 0;
 		end else
 		if (oled_ready && !oled_strobe)
 		case (state)
 		INIT0: begin
-			pin_led <= 1;
 			// function set
 			oled_cmd <= {
 				1'b0, // rs
@@ -222,12 +170,11 @@ module top(
 			state <= DRAW_Y;
 		end
 		DRAW_Y: begin
-			pin_led <= 1;
 			// Y position is controlled by CGRAM
 			oled_cmd <= {
 				1'b0,// register
 				6'b0100000,
-				row
+				col
 			};
 			oled_strobe <= 1;
 			oled_wait <= 0;
@@ -245,30 +192,19 @@ module top(
 			state <= DRAW_BITS;
 		end
 		DRAW_BITS: begin
-			pin_led <= 0;
 			oled_wait <= 0;
 			oled_cmd <= {
 				1'b1, // data
-				row ? pixels[15:8] : pixels[7:0]
+				col ? pixels[8:15] : pixels[0:7]
 			};
 			oled_strobe <= 1;
 
-			if (col == 79) begin
-				if (row == 1)
-				begin
-					if (frame == 0)
-						frame <= 80;
-					else
-					if (frame == 80)
-						frame <= 0;
-					else
-						frame <= 0;
-				end
-				row <= !row;
-				col <= 0;
+			if (row == ROWS-1) begin
+				col <= !col;
+				row <= 0;
 				state <= DRAW_Y;
 			end else begin
-				col <= col + 1;
+				row <= row + 1;
 			end
 		end
 		endcase
@@ -380,36 +316,4 @@ module oled(
 	end
 endmodule
 
-/**
- * PLL configuration
- *
- * This Verilog module was generated automatically
- * using the icepll tool from the IceStorm project.
- * Use at your own risk.
- *
- * Given input frequency:        16.000 MHz
- * Requested output frequency:   48.000 MHz
- * Achieved output frequency:    48.000 MHz
- */
-
-module pll(
-	input  clock_in,
-	output clock_out,
-	output locked
-	);
-
-SB_PLL40_CORE #(
-		.FEEDBACK_PATH("SIMPLE"),
-		.DIVR(4'b0000),		// DIVR =  0
-		.DIVF(7'b0101111),	// DIVF = 47
-		.DIVQ(3'b100),		// DIVQ =  4
-		.FILTER_RANGE(3'b001)	// FILTER_RANGE = 1
-	) uut (
-		.LOCK(locked),
-		.RESETB(1'b1),
-		.BYPASS(1'b0),
-		.REFERENCECLK(clock_in),
-		.PLLOUTCORE(clock_out)
-		);
-
-endmodule
+`endif

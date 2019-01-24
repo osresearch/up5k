@@ -32,9 +32,9 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 %.json: %.v
 	$(ICEPATH)yosys \
 		-q \
-		-p "synth_ice40 -top top -json $@" \
+		-p 'read_verilog -I usb $<' \
+		-p 'synth_ice40 -top top -json $@' \
 		-E .$(basename $@).d \
-		$<
 
 %.asc: $(PIN_SRC) %.json
 	$(PNR) \

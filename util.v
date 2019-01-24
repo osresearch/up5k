@@ -1,6 +1,8 @@
 /** \file
  * Utility modules.
  */
+`ifndef util_v
+`define util_v
 
 `define CLOG2(x) \
    x <= 2	 ? 1 : \
@@ -218,3 +220,5 @@ module pulse_stretcher(clk, reset, in, out);
      end
 endmodule
 
+
+`endif
