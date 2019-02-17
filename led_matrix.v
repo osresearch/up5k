@@ -171,24 +171,33 @@ module led_matrix(
 	reg all_rows_done;
 	reg all_pixels_done;
 
-	reg [7:0] framebuffer_r[X_RES * Y_RES - 1 : 0];
-	reg [7:0] framebuffer_g[X_RES * Y_RES - 1 : 0];
-	reg [7:0] framebuffer_b[X_RES * Y_RES - 1 : 0];
+	reg [15:0] framebuffer_0[X_RES * Y_RES/2 - 1 : 0];
+	reg [15:0] framebuffer_1[X_RES * Y_RES/2 - 1 : 0];
 
-	wire [15:0] pix_offset = (led_y << Y_SHIFT) | led_x;
-	reg [7:0] pix_r; // = framebuffer_r[pix_offset];
-	reg [7:0] pix_g; // = framebuffer_g[pix_offset];
-	reg [7:0] pix_b; // = framebuffer_b[pix_offset];
+	wire [15:0] pix_0 = (led_y << Y_SHIFT) | led_x;
+	wire [15:0] pix_1 = ((led_y+Y_STRIDE) << Y_SHIFT) | led_x;
+
+	reg [7:0] pix_r0;
+	reg [7:0] pix_g0;
+	reg [7:0] pix_b0;
+
+	reg [7:0] pix_r1;
+	reg [7:0] pix_g1;
+	reg [7:0] pix_b1;
 
 	always @(posedge clk) begin
-		pix_r <= framebuffer_r[pix_offset];
-	 	pix_g <= framebuffer_g[pix_offset];
-		pix_b <= framebuffer_b[pix_offset];
+		pix_r0 <= framebuffer_0[pix_0][15:11] << 1;
+		pix_g0 <= framebuffer_0[pix_0][10:5] << 0;
+		pix_b0 <= framebuffer_0[pix_0][4:0] << 1;
+
+		pix_r1 <= framebuffer_1[pix_1][15:11] << 1;
+		pix_g1 <= framebuffer_1[pix_1][10:5] << 0;
+		pix_b1 <= framebuffer_1[pix_1][4:0] << 1;
 	end
 
-	initial $readmemh("red.hex", framebuffer_r);
-	initial $readmemh("green.hex", framebuffer_g);
-	initial $readmemh("blue.hex", framebuffer_b);
+	initial $readmemh("packed0.hex", framebuffer_0);
+	initial $readmemh("packed1.hex", framebuffer_1);
+	//initial $readmemh("blue.hex", framebuffer_b);
 
 	reg stall;
 
@@ -214,7 +223,7 @@ module led_matrix(
 		end else
 		if (all_pixels_done)
 		begin
-			if (bright == 255) begin
+			if (bright == 128) begin
 				// have done all of the brightness at this
 				// output address, switch off the output
 				// and update the output address
@@ -257,21 +266,18 @@ module led_matrix(
 			end
 		end else begin
 			// update the output bit for this r/g/b
-			led_r[row] <= (pix_r >> DIM) > bright;
-			led_g[row] <= (pix_g >> DIM) > bright;
-			led_b[row] <= (pix_b >> DIM) > bright;
+			led_r[0] <= (pix_r0 >> DIM) > bright;
+			led_g[0] <= (pix_g0 >> DIM) > bright;
+			led_b[0] <= (pix_b0 >> DIM) > bright;
+			led_r[1] <= (pix_r1 >> DIM) > bright;
+			led_g[1] <= (pix_g1 >> DIM) > bright;
+			led_b[1] <= (pix_b1 >> DIM) > bright;
 
 			//led_r[row] <= (led_x << 2) > bright;
 			//led_g[row] <= 0; //
 			//led_b[row] <= 0; //bright < 200;
 
-			led_y <= led_y + Y_STRIDE;
-			stall <= 1;
-
-			if (row == ROWS-1)
-				all_rows_done <= 1;
-			else
-				row <= row + 1;
+			all_rows_done <= 1;
 		end
 	end
 
@@ -281,12 +287,16 @@ module led_matrix(
 	// to move into an spram
 	wire [15:0] input_offset = (y << Y_SHIFT) | x;
 
+	// 16-bit packed pixels, 5 red, 6 green, 5 blue
+	wire [15:0] input_packed = { r[7:3], g[7:2], b[7:3] };
+
 	always @(posedge input_clk)
 	begin
 		if (strobe) begin
-			framebuffer_r[input_offset] <= r;
-			framebuffer_g[input_offset] <= g;
-			framebuffer_b[input_offset] <= b;
+			if (y[3] == 0)
+				framebuffer_0[input_offset] <= input_packed;
+			else
+				framebuffer_1[input_offset] <= input_packed;
 		end
 	end
 
