@@ -2,6 +2,11 @@ DEVICE-upduino ?= up5k
 FOOTPRINT-upduino ?= sg48
 PIN_SRC-upduino ?= upduino_v2.pcf
 
+DEVICE-icebreaker ?= up5k
+FOOTPRINT-icebreaker ?= sg48
+PIN_SRC-icebreaker ?= icebreaker.pcf
+
+
 DEVICE-tinyfpga := lp8k
 FOOTPRINT-tinyfpga := cm81
 PIN_SRC-tinyfpga := tinyfpga-bx.pcf
@@ -31,7 +36,7 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 %.json: %.v
 	$(ICEPATH)yosys \
 		-q \
-		-p 'read_verilog -I usb $<' \
+		-p 'read_verilog $<' \
 		-p 'synth_ice40 -top top -json $@' \
 		-E .$(basename $@).d \
 
@@ -42,7 +47,6 @@ PNR ?= $(ICEPATH)nextpnr-ice40
 		--asc $@ \
 		--pcf $(PIN_SRC) \
 		--json $(basename $@).json \
-		`[ -r $(basename $@).py ] && echo --pre-pack $(basename $@).py` \
 
 %.gui: %.json
 	$(PNR) --gui --$(DEVICE) --pcf $(PIN_SRC) --json $<
