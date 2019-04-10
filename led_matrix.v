@@ -132,7 +132,20 @@ endmodule
 
 
 /*
- * 
+ * Max output chains:
+ * 8 rgb sets * 8 rows per set = 64 vertical rows
+ *
+ * Max resolution on a up5k:
+ * 30 * 4096 bit dual port block RAM
+ * 64 * 64 == 4096 pixels @ 24 bits per pixel
+ *
+ * Using SPRAM, 4 * 256 Kb
+ * 8192 pixels per SPRAM @ 24 bits per pixel
+ * 1024 x 64
+ *
+ * Max update at 1024 == 46 K-rows / sec
+ * 5 KHz per row (@ 8 row scan)
+ * == 128 levels @ 45 Hz
  */
 module led_matrix(
 	input clk,
@@ -223,7 +236,7 @@ module led_matrix(
 		end else
 		if (all_pixels_done)
 		begin
-			if (bright == 128) begin
+			if (bright == 255) begin
 				// have done all of the brightness at this
 				// output address, switch off the output
 				// and update the output address
@@ -288,7 +301,7 @@ module led_matrix(
 	wire [15:0] input_offset = (y << Y_SHIFT) | x;
 
 	// 16-bit packed pixels, 5 red, 6 green, 5 blue
-	wire [15:0] input_packed = { r[7:3], g[7:2], b[7:3] };
+	wire [15:0] input_packed = { r[7:3], g[7:3], 1'b0, b[7:3] };
 
 	always @(posedge input_clk)
 	begin
