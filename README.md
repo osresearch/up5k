@@ -38,3 +38,8 @@ UltraPlus 5K overview
 Overview: http://www.latticesemi.com/Products/FPGAandCPLD/iCE40UltraPlus
 
 Datasheet: http://www.latticesemi.com/-/media/LatticeSemi/Documents/DataSheets/iCE/iCE40-UltraPlus-Family-Data-Sheet.ashx
+
+![DSP Block](images/dsp-mac16.svg)
+
+The eight DSP blocks can do 16x16 multiply and 32-bit accumulate operations.
+They can be combined to make 32x32 multipliers, etc.
