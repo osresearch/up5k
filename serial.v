@@ -46,9 +46,9 @@ module top(
 	assign led_g = 1;
 	assign led_b = serial_rxd; // idles high
 
-	// generate a 1 MHz serial clock from the 48 MHz clock
+	// generate a 3 MHz serial clock from the 48 MHz clock
 	wire clk_1;
-	divide_by_n #(.N(48)) div(clk_48, reset, clk_1);
+	divide_by_n #(.N(16)) div(clk_48, reset, clk_1);
 
 	reg [7:0] uart_txd;
 	reg uart_txd_strobe;
